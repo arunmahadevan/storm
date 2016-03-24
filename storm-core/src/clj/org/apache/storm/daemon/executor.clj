@@ -479,9 +479,9 @@
 
 ;; Send sampled data to the eventlogger if the global or component level
 ;; debug flag is set (via nimbus api).
-(defn send-to-eventlogger [executor-data task-data values component-id message-id random]
-    (let [c->d @(:storm-component->debug-atom executor-data)
-          options (get c->d component-id (get c->d (:storm-id executor-data)))
+(defn send-to-eventlogger [executor-data task-data values component-id message-id ^Random random storm-id debug-atom]
+    (let [c->d @debug-atom
+          options (get c->d component-id (get c->d storm-id))
           spct    (if (and (not-nil? options) (:enable options)) (:samplingpct options) 0)]
       ;; the thread's initialized random number generator is used to generate
       ;; uniformily distributed random numbers.
@@ -542,6 +542,8 @@
         event-handler (mk-task-receiver executor-data tuple-action-fn)
         has-ackers? (has-ackers? storm-conf)
         has-eventloggers? (has-eventloggers? storm-conf)
+        storm-id (:storm-id executor-data)
+        debug-atom (:storm-component->debug-atom executor-data)
         emitted-count (MutableLong. 0)
         empty-emit-streak (MutableLong. 0)]
    
@@ -575,7 +577,7 @@
                                                                                      tuple-id)]
                                                            (transfer-fn out-task out-tuple)))
                                          (if has-eventloggers?
-                                           (send-to-eventlogger executor-data task-data values component-id message-id rand))
+                                           (send-to-eventlogger executor-data task-data values component-id message-id rand storm-id debug-atom))
                                          (if (and rooted?
                                                   (not (.isEmpty out-ids)))
                                            (do
@@ -739,7 +741,10 @@
                                                                (.getSourceComponent tuple)
                                                                (.getSourceStreamId tuple)
                                                                delta)))))))
-        has-eventloggers? (has-eventloggers? storm-conf)]
+        has-eventloggers? (has-eventloggers? storm-conf)
+        storm-id (:storm-id executor-data)
+        debug-atom (:storm-component->debug-atom executor-data)
+        ]
     
     ;; TODO: can get any SubscribedState objects out of the context now
 
@@ -775,7 +780,7 @@
                                                                                (MessageId/makeId anchors-to-ids))]
                                                           (transfer-fn t tuple))))
                                     (if has-eventloggers?
-                                      (send-to-eventlogger executor-data task-data values component-id nil rand))
+                                      (send-to-eventlogger executor-data task-data values component-id nil rand storm-id debug-atom))
                                     (or out-tasks [])))]]
           (builtin-metrics/register-all (:builtin-metrics task-data) storm-conf user-context)
           (when (instance? ICredentialsListener bolt-obj) (.setCredentials bolt-obj initial-credentials)) 
