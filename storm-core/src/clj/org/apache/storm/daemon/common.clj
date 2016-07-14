@@ -25,9 +25,10 @@
   (:import [org.apache.storm.task WorkerTopologyContext])
   (:import [org.apache.storm Constants])
   (:import [org.apache.storm.metric SystemBolt])
-  (:import [org.apache.storm.metric EventLoggerBolt])
-  (:import [org.apache.storm.security.auth IAuthorizer]) 
-  (:import [java.io InterruptedIOException])
+  (:import [org.apache.storm.metric EventLoggerBolt MetricsConsumerBolt])
+  (:import [org.apache.storm.security.auth IAuthorizer])
+  (:import [java.io InterruptedIOException]
+           (org.apache.storm.metric.filter FilterByMetricName))
   (:require [clojure.set :as set])  
   (:require [org.apache.storm.daemon.acker :as acker])
   (:require [org.apache.storm.thrift :as thrift])
@@ -221,9 +222,9 @@
   (let [num-executors (if (nil? (storm-conf TOPOLOGY-ACKER-EXECUTORS)) (storm-conf TOPOLOGY-WORKERS) (storm-conf TOPOLOGY-ACKER-EXECUTORS))
         acker-bolt (thrift/mk-bolt-spec* (acker-inputs ret)
                                          (new org.apache.storm.daemon.acker)
-                                         {ACKER-ACK-STREAM-ID (thrift/direct-output-fields ["id"])
-                                          ACKER-FAIL-STREAM-ID (thrift/direct-output-fields ["id"])
-                                          ACKER-RESET-TIMEOUT-STREAM-ID (thrift/direct-output-fields ["id"])
+                                         {ACKER-ACK-STREAM-ID (thrift/direct-output-fields ["id" "time-delta-ms"])
+                                          ACKER-FAIL-STREAM-ID (thrift/direct-output-fields ["id" "time-delta-ms"])
+                                          ACKER-RESET-TIMEOUT-STREAM-ID (thrift/direct-output-fields ["id" "time-delta-ms"])
                                           }
                                          :p num-executors
                                          :conf {TOPOLOGY-TASKS num-executors
@@ -298,18 +299,21 @@
                       {[comp-id METRICS-STREAM-ID] :shuffle})
                     (into {}))
         
-        mk-bolt-spec (fn [class arg p]
+        mk-bolt-spec (fn [class arg p max-retain-metric-tuples whitelist blacklist]
                        (thrift/mk-bolt-spec*
                         inputs
-                        (org.apache.storm.metric.MetricsConsumerBolt. class arg)
+                        (org.apache.storm.metric.MetricsConsumerBolt. class arg max-retain-metric-tuples (FilterByMetricName. whitelist blacklist))
                         {} :p p :conf {TOPOLOGY-TASKS p}))]
     
     (map
      (fn [component-id register]           
        [component-id (mk-bolt-spec (get register "class")
                                    (get register "argument")
-                                   (or (get register "parallelism.hint") 1))])
-     
+                                   (or (get register "parallelism.hint") 1)
+                                   (or (get register "max.retain.metric.tuples") 100)
+                                   (get register "whitelist")
+                                   (get register "blacklist"))])
+
      (metrics-consumer-register-ids storm-conf)
      (get storm-conf TOPOLOGY-METRICS-CONSUMER-REGISTER))))
 
