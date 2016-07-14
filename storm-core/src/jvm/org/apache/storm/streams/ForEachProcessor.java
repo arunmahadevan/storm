@@ -1,6 +1,6 @@
 package org.apache.storm.streams;
 
-class ForEachProcessor<T> implements Processor<T> {
+class ForEachProcessor<T> extends BaseProcessor<T> {
     private final Consumer<T> consumer;
 
     ForEachProcessor(Consumer<T> consumer) {
@@ -8,7 +8,7 @@ class ForEachProcessor<T> implements Processor<T> {
     }
 
     @Override
-    public void execute(T input, ProcessorContext context) {
+    public void execute(T input) {
         consumer.accept(input);
     }
 }

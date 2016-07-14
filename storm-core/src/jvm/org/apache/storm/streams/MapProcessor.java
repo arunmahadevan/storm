@@ -1,6 +1,6 @@
 package org.apache.storm.streams;
 
-class MapProcessor<T, R> implements Processor<T> {
+class MapProcessor<T, R> extends BaseProcessor<T> {
     private final Function<T, R> function;
 
     MapProcessor(Function<T, R> function) {
@@ -8,7 +8,7 @@ class MapProcessor<T, R> implements Processor<T> {
     }
 
     @Override
-    public void execute(T input, ProcessorContext context) {
+    public void execute(T input) {
         context.forward(function.apply(input));
     }
 }

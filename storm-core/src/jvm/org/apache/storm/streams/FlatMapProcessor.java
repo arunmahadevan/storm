@@ -1,6 +1,6 @@
 package org.apache.storm.streams;
 
-class FlatMapProcessor<T, R> implements Processor<T> {
+class FlatMapProcessor<T, R> extends BaseProcessor<T> {
     private final Function<? super T, ? extends Iterable<? extends R>> function;
 
     FlatMapProcessor(Function<? super T, ? extends Iterable<? extends R>> function) {
@@ -8,8 +8,9 @@ class FlatMapProcessor<T, R> implements Processor<T> {
     }
 
     @Override
-    public void execute(T input, ProcessorContext context) {
-        for(R res: function.apply(input)){
+    public void execute(T input) {
+        Iterable<? extends R> it = function.apply(input);
+        for(R res: it){
             context.forward(res);
         }
     }

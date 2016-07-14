@@ -9,6 +9,7 @@ import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.jgrapht.graph.DefaultDirectedGraph;
+import org.jgrapht.graph.DirectedSubgraph;
 import org.jgrapht.traverse.TopologicalOrderIterator;
 
 import java.io.Serializable;
@@ -62,11 +63,11 @@ public class StreamBuilder {
                 nodeToNodeId.put(node, spoutId);
             } else if (node instanceof ProcessorNode) {
                 String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
-                IRichBolt bolt = new ProcessorBolt(Collections.singletonList(((ProcessorNode) node)));
+                IRichBolt bolt = new ProcessorBolt(graph, Collections.singleton((ProcessorNode) node));
                 BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt);
                 for (Edge edge: graph.incomingEdgesOf(node)) {
-                    boltDeclarer.shuffleGrouping(nodeToNodeId.get(edge.source));
-                    if (edge.source instanceof SpoutNode) {
+                    boltDeclarer.shuffleGrouping(nodeToNodeId.get(edge.getSource()));
+                    if (edge.getSource() instanceof SpoutNode) {
 
                     }
                 }

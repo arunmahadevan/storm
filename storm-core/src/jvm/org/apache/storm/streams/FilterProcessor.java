@@ -1,6 +1,6 @@
 package org.apache.storm.streams;
 
-class FilterProcessor<T> implements Processor<T> {
+class FilterProcessor<T> extends BaseProcessor<T> {
     private Predicate<T> predicate;
 
     FilterProcessor(Predicate<T> predicate) {
@@ -8,7 +8,7 @@ class FilterProcessor<T> implements Processor<T> {
     }
 
     @Override
-    public void execute(T input, ProcessorContext context) {
+    public void execute(T input) {
         if (predicate.test(input)) {
             context.forward(input);
         }

@@ -11,6 +11,10 @@ class ProcessorNode implements Node {
         this.outputFields = outputFields;
     }
 
+    public void initProcessorContext(ProcessorContext context) {
+        processor.init(context);
+    }
+
     public Processor<?> getProcessor() {
         return processor;
     }

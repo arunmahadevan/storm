@@ -1,8 +1,9 @@
 package org.apache.storm.streams;
 
-public class AggregateProcessor<T> implements Processor<T> {
+public class AggregateProcessor<T> extends BaseProcessor<T> {
+
     @Override
-    public void execute(T input, ProcessorContext context) {
+    public void execute(T input) {
 
     }
 

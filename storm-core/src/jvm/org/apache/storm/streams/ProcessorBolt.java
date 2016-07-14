@@ -5,51 +5,108 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Tuple;
-import org.apache.storm.tuple.Values;
+import org.jgrapht.DirectedGraph;
+import org.jgrapht.Graph;
+import org.jgrapht.graph.DirectedSubgraph;
+import org.jgrapht.traverse.TopologicalOrderIterator;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 class ProcessorBolt extends BaseRichBolt {
-    private final List<ProcessorNode> processorNodes;
+    private final DirectedGraph<Node, Edge> graph;
+    private final Set<ProcessorNode> nodes;
+    private Map stormConf;
+    private TopologyContext topologyContext;
     private OutputCollector outputCollector;
-    private DefaultProcessorContext ctx = new DefaultProcessorContext();
+    private List<ProcessorNode> initialProcessors = new ArrayList<>();
+    private List<ProcessorNode> outgoingProcessors = new ArrayList<>();
 
-    public ProcessorBolt(List<ProcessorNode> processorNodes) {
-        this.processorNodes = processorNodes;
+    public ProcessorBolt(DirectedGraph<Node, Edge> graph, Set<ProcessorNode> nodes) {
+        this.graph = graph;
+        this.nodes = nodes;
     }
 
     @Override
     public void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
-        outputCollector = collector;
+        this.stormConf = stormConf;
+        this.topologyContext = context;
+        this.outputCollector = collector;
+        DirectedSubgraph<Node, Edge> subgraph = new DirectedSubgraph<>(graph, new HashSet<Node>(nodes), null);
+        TopologicalOrderIterator<Node, Edge> it = new TopologicalOrderIterator<>(subgraph);
+        while (it.hasNext()) {
+            Node node = it.next();
+            if (!(node instanceof ProcessorNode)) {
+                throw new IllegalStateException("Not a processor node " + node);
+            }
+            ProcessorNode processorNode = (ProcessorNode) node;
+            List<ProcessorNode> parents = getParents(subgraph, processorNode);
+            List<ProcessorNode> children = getChildren(subgraph, processorNode);
+            if (parents.isEmpty()) {
+                initialProcessors.add(processorNode);
+            }
+            ProcessorContext processorContext;
+            if (children.isEmpty()) {
+                processorContext = new EmittingProcessorContext(collector);
+                outgoingProcessors.add(processorNode);
+            } else {
+                processorContext = new ForwardingProcessorContext(children);
+            }
+            processorNode.initProcessorContext(processorContext);
+        }
     }
 
     @Override
     public void execute(Tuple input) {
-        Object result;
+        Object value;
         //TODO: find a better way
         // if tuple arrives from a spout, it can be passed as is
         // otherwise the value is in the first field of the tuple
         if (input.getSourceComponent().startsWith("spout")) {
-            result = input;
+            value = input;
         } else {
-            result = input.getValue(0);
+            value = input.getValue(0);
         }
-        Iterator<ProcessorNode> it = processorNodes.iterator();
-        while (it.hasNext() && result != null) {
+        Iterator<ProcessorNode> it = initialProcessors.iterator();
+        while (it.hasNext()) {
             Processor processor = it.next().getProcessor();
-            processor.execute(result, ctx);
-            result = ctx.get();
-        }
-        if (result != null) {
-            outputCollector.emit(input, new Values(result));
-            outputCollector.ack(input);
+            processor.execute(value);
         }
     }
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(processorNodes.get(processorNodes.size() - 1).getOutputFields());
+        //TODO: add stream
+        for (ProcessorNode node : nodes) {
+            declarer.declare(node.getOutputFields());
+        }
     }
+
+    private List<ProcessorNode> getParents(DirectedGraph<Node, Edge> graph, Node node) {
+        List<Edge> incoming = new ArrayList(graph.incomingEdgesOf(node));
+        List<ProcessorNode> ret = new ArrayList();
+        for (Edge e : incoming) {
+            if (e.getSource() instanceof ProcessorNode) {
+                ret.add((ProcessorNode) e.getSource());
+            }
+        }
+        return ret;
+    }
+
+    public List<ProcessorNode> getChildren(DirectedGraph<Node, Edge> graph, Node node) {
+        List<Edge> outgoing = new ArrayList(graph.outgoingEdgesOf(node));
+        List<ProcessorNode> ret = new ArrayList();
+        for (Edge e : outgoing) {
+            if (e.getTarget() instanceof ProcessorNode) {
+                ret.add((ProcessorNode) e.getTarget());
+            }
+        }
+        return ret;
+    }
+
 }
