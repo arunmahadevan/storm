@@ -26,6 +26,7 @@ class ProcessorBolt extends BaseRichBolt {
     private OutputCollector outputCollector;
     private List<ProcessorNode> initialProcessors = new ArrayList<>();
     private List<ProcessorNode> outgoingProcessors = new ArrayList<>();
+    private Set<EmittingProcessorContext> emittingProcessorContexts = new HashSet<>();
 
     public ProcessorBolt(DirectedGraph<Node, Edge> graph, Set<ProcessorNode> nodes) {
         this.graph = graph;
@@ -45,15 +46,17 @@ class ProcessorBolt extends BaseRichBolt {
                 throw new IllegalStateException("Not a processor node " + node);
             }
             ProcessorNode processorNode = (ProcessorNode) node;
-            List<ProcessorNode> parents = getParents(subgraph, processorNode);
-            List<ProcessorNode> children = getChildren(subgraph, processorNode);
+            List<ProcessorNode> parents = StreamUtil.getParents(subgraph, processorNode);
+            List<ProcessorNode> children = StreamUtil.getChildren(subgraph, processorNode);
             if (parents.isEmpty()) {
                 initialProcessors.add(processorNode);
             }
             ProcessorContext processorContext;
             if (children.isEmpty()) {
-                processorContext = new EmittingProcessorContext(collector);
+                EmittingProcessorContext emittingProcessorContext = new EmittingProcessorContext(processorNode.getOutputStream(), collector);
                 outgoingProcessors.add(processorNode);
+                emittingProcessorContexts.add(emittingProcessorContext);
+                processorContext = emittingProcessorContext;
             } else {
                 processorContext = new ForwardingProcessorContext(children);
             }
@@ -63,50 +66,40 @@ class ProcessorBolt extends BaseRichBolt {
 
     @Override
     public void execute(Tuple input) {
-        Object value;
+        setAnchor(input);
+        process(getValue(input));
+        outputCollector.ack(input);
+    }
+
+    @Override
+    public void declareOutputFields(OutputFieldsDeclarer declarer) {
+        for (ProcessorNode node : nodes) {
+            declarer.declareStream(node.getOutputStream(), node.getOutputFields());
+        }
+    }
+
+    private void setAnchor(Tuple input) {
+        for (EmittingProcessorContext ctx : emittingProcessorContexts) {
+            ctx.setAnchor(input);
+        }
+    }
+
+    private Object getValue(Tuple input) {
         //TODO: find a better way
         // if tuple arrives from a spout, it can be passed as is
         // otherwise the value is in the first field of the tuple
         if (input.getSourceComponent().startsWith("spout")) {
-            value = input;
-        } else {
-            value = input.getValue(0);
+            return input;
         }
+        return input.getValue(0);
+    }
+
+    private void process(Object value) {
         Iterator<ProcessorNode> it = initialProcessors.iterator();
         while (it.hasNext()) {
             Processor processor = it.next().getProcessor();
             processor.execute(value);
         }
-    }
-
-    @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        //TODO: add stream
-        for (ProcessorNode node : nodes) {
-            declarer.declare(node.getOutputFields());
-        }
-    }
-
-    private List<ProcessorNode> getParents(DirectedGraph<Node, Edge> graph, Node node) {
-        List<Edge> incoming = new ArrayList(graph.incomingEdgesOf(node));
-        List<ProcessorNode> ret = new ArrayList();
-        for (Edge e : incoming) {
-            if (e.getSource() instanceof ProcessorNode) {
-                ret.add((ProcessorNode) e.getSource());
-            }
-        }
-        return ret;
-    }
-
-    public List<ProcessorNode> getChildren(DirectedGraph<Node, Edge> graph, Node node) {
-        List<Edge> outgoing = new ArrayList(graph.outgoingEdgesOf(node));
-        List<ProcessorNode> ret = new ArrayList();
-        for (Edge e : outgoing) {
-            if (e.getTarget() instanceof ProcessorNode) {
-                ret.add((ProcessorNode) e.getTarget());
-            }
-        }
-        return ret;
     }
 
 }

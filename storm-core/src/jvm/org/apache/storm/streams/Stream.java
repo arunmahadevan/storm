@@ -12,22 +12,27 @@ public class Stream<T> {
     }
 
     public Stream<T> filter(Predicate<? super T> predicate) {
-        ProcessorNode filterNode = streamBuilder.addNode(this, new ProcessorNode(new FilterProcessor<>(predicate), node.getOutputFields()));
+        ProcessorNode filterNode = streamBuilder.addNode(this, makeProcessorNode(new FilterProcessor<>(predicate), node.getOutputFields()));
         return new Stream<>(streamBuilder, filterNode);
     }
 
     public <R> Stream<R> map(Function<? super T, ? extends R> function) {
-        ProcessorNode mapNode = streamBuilder.addNode(this, new ProcessorNode(new MapProcessor<>(function), new Fields("value")));
+        ProcessorNode mapNode = streamBuilder.addNode(this, makeProcessorNode(new MapProcessor<>(function), new Fields("value")));
         return new Stream<>(streamBuilder, mapNode);
     }
 
     public <R> Stream<R> flatMap(Function<? super T, ? extends Iterable<? extends R>> function) {
-        ProcessorNode flatMapNode = streamBuilder.addNode(this, new ProcessorNode(new FlatMapProcessor<>(function), new Fields("value")));
+        ProcessorNode flatMapNode = streamBuilder.addNode(this, makeProcessorNode(new FlatMapProcessor<>(function), new Fields("value")));
         return new Stream<>(streamBuilder, flatMapNode);
     }
 
     public void forEach(Consumer<? super T> action) {
-        streamBuilder.addNode(this, new ProcessorNode(new ForEachProcessor<>(action), new Fields()));
+        streamBuilder.addNode(this, makeProcessorNode(new ForEachProcessor<>(action), new Fields()));
+    }
+
+    private ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields) {
+        return new ProcessorNode(UniqueIdGen.getInstance().getUniqueStreamId(),
+                processor, outputFields);
     }
 
     GroupedStream<T> groupBy(Fields fields) {

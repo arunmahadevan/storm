@@ -1,5 +1,6 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.Config;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.topology.BoltDeclarer;
 import org.apache.storm.topology.IRichBolt;
@@ -46,7 +47,8 @@ public class StreamBuilder {
 
     public <T> Stream<T> newStream(IRichSpout spout, TupleValueMapper<T> valueMapper) {
         Stream<Tuple> spoutStream = newStream(spout);
-        ProcessorNode mapNode = addNode(spoutStream, new ProcessorNode(new MapProcessor<>(valueMapper), new Fields("value")));
+        ProcessorNode mapNode = addNode(spoutStream, new ProcessorNode(UniqueIdGen.getInstance().getUniqueStreamId(),
+                new MapProcessor<>(valueMapper), new Fields("value")));
         return new Stream<>(this, mapNode);
     }
 
@@ -56,7 +58,7 @@ public class StreamBuilder {
         List<Processor> processors = new ArrayList<>();
         Map<Node, String> nodeToNodeId = new HashMap<>();
         while (iterator.hasNext()) {
-            Node node =  iterator.next();
+            Node node = iterator.next();
             if (node instanceof SpoutNode) {
                 String spoutId = UniqueIdGen.getInstance().getUniqueSpoutId();
                 topologyBuilder.setSpout(spoutId, ((SpoutNode) node).getSpout());
@@ -65,9 +67,9 @@ public class StreamBuilder {
                 String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
                 IRichBolt bolt = new ProcessorBolt(graph, Collections.singleton((ProcessorNode) node));
                 BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt);
-                for (Edge edge: graph.incomingEdgesOf(node)) {
-                    boltDeclarer.shuffleGrouping(nodeToNodeId.get(edge.getSource()));
-                    if (edge.getSource() instanceof SpoutNode) {
+                for (Node parent : StreamUtil.<Node>getParents(graph, node)) {
+                    boltDeclarer.shuffleGrouping(nodeToNodeId.get(parent), parent.getOutputStream());
+                    if (parent instanceof SpoutNode) {
 
                     }
                 }

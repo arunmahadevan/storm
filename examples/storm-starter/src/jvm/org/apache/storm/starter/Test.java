@@ -64,31 +64,31 @@ public class Test {
 //            }
 //        });
 //
-//        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
-//
-//        stream.filter(new Predicate<String>() {
-//            @Override
-//            public boolean test(String input) {
-//                return input.equals("nathan");
-//            }
-//        }).map(new Function<String, String>() {
-//            @Override
-//            public String apply(String input) {
-//                return input.toUpperCase();
-//            }
-//        }).flatMap(new Function<String, Iterable<String>>() {
-//            @Override
-//            public Iterable<String> apply(String input) {
-//                return Arrays.asList(input.split("(?!^)"));
-//            }
-//        }).forEach(new Consumer<String>() {
-//            @Override
-//            public void accept(String input) {
-//                System.out.println(input);
-//            }
-//        });
-//
-//
+        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+
+        stream.filter(new Predicate<String>() {
+            @Override
+            public boolean test(String input) {
+                return input.equals("nathan");
+            }
+        }).map(new Function<String, String>() {
+            @Override
+            public String apply(String input) {
+                return input.toUpperCase();
+            }
+        }).flatMap(new Function<String, Iterable<String>>() {
+            @Override
+            public Iterable<String> apply(String input) {
+                return Arrays.asList(input.split("(?!^)"));
+            }
+        }).forEach(new Consumer<String>() {
+            @Override
+            public void accept(String input) {
+                System.out.println(input);
+            }
+        });
+
+
 
         // JAVA 1.8
 //        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
@@ -99,7 +99,8 @@ public class Test {
 //                .forEach(x -> System.out.println(x));
 
         LocalCluster cluster = new LocalCluster();
-        cluster.submitTopology("test", new Config(), builder.build());
+        Config config = new Config();
+        cluster.submitTopology("test", config, builder.build());
         Utils.sleep(10000);
         cluster.killTopology("test");
         cluster.shutdown();

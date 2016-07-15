@@ -16,7 +16,7 @@ public class UniqueIdGen {
 
     public String getUniqueStreamId() {
         streamCounter++;
-        return "stream" + streamCounter;
+        return "s" + streamCounter;
     }
 
     public String getUniqueBoltId() {

@@ -5,6 +5,9 @@ import org.apache.storm.topology.OutputFieldsGetter;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.utils.Utils;
 
+import java.util.Collections;
+import java.util.Set;
+
 class SpoutNode implements Node {
     private final IRichSpout spout;
     private final Fields outputFields;
@@ -18,6 +21,11 @@ class SpoutNode implements Node {
         OutputFieldsGetter getter = new OutputFieldsGetter();
         spout.declareOutputFields(getter);
         return new Fields(getter.getFieldsDeclaration().get(Utils.DEFAULT_STREAM_ID).get_output_fields());
+    }
+
+    @Override
+    public String getOutputStream() {
+        return Utils.DEFAULT_STREAM_ID;
     }
 
     @Override
