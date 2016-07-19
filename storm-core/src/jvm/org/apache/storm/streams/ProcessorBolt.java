@@ -27,6 +27,8 @@ class ProcessorBolt extends BaseRichBolt {
     private List<ProcessorNode> initialProcessors = new ArrayList<>();
     private List<ProcessorNode> outgoingProcessors = new ArrayList<>();
     private Set<EmittingProcessorContext> emittingProcessorContexts = new HashSet<>();
+    // TODO
+    private boolean emitGroupKey = false;
 
     public ProcessorBolt(DirectedGraph<Node, Edge> graph, Set<ProcessorNode> nodes) {
         this.graph = graph;
@@ -67,13 +69,14 @@ class ProcessorBolt extends BaseRichBolt {
     @Override
     public void execute(Tuple input) {
         setAnchor(input);
-        process(getValue(input));
+        process(input);
         outputCollector.ack(input);
     }
 
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
         for (ProcessorNode node : nodes) {
+            // TODO: if group by add key to outputfields
             declarer.declareStream(node.getOutputStream(), node.getOutputFields());
         }
     }
@@ -84,20 +87,25 @@ class ProcessorBolt extends BaseRichBolt {
         }
     }
 
-    private Object getValue(Tuple input) {
+    private void process(Tuple input) {
+        Object value;
         //TODO: find a better way
         // if tuple arrives from a spout, it can be passed as is
         // otherwise the value is in the first field of the tuple
         if (input.getSourceComponent().startsWith("spout")) {
-            return input;
+            value = input;
+        } else {
+            value = input.getValue(0);
         }
-        return input.getValue(0);
-    }
 
-    private void process(Object value) {
         Iterator<ProcessorNode> it = initialProcessors.iterator();
         while (it.hasNext()) {
-            Processor processor = it.next().getProcessor();
+            ProcessorNode processorNode = it.next();
+            Processor processor = processorNode.getProcessor();
+            // TODO:
+            if (input.size() == 2) {
+                value = new Pair<>(input.getValue(0), input.getValue(1));
+            }
             processor.execute(value);
         }
     }

@@ -6,14 +6,15 @@ import java.util.Collections;
 import java.util.Set;
 
 class ProcessorNode implements Node {
+    private final String streamId;
     private final Processor<?> processor;
     private final Fields outputFields;
-    private final String streamId;
+    private String componentId;
 
     public ProcessorNode(String streamId, Processor<?> processor, Fields outputFields) {
+        this.streamId = streamId;
         this.processor = processor;
         this.outputFields = outputFields;
-        this.streamId = streamId;
     }
 
     public void initProcessorContext(ProcessorContext context) {
@@ -24,6 +25,7 @@ class ProcessorNode implements Node {
         return processor;
     }
 
+    // TODO: if multiple output stream should be supported
     @Override
     public Fields getOutputFields() {
         return outputFields;
@@ -32,5 +34,18 @@ class ProcessorNode implements Node {
     @Override
     public String getOutputStream() {
         return streamId;
+    }
+
+    public String getStreamId() {
+        return streamId;
+    }
+
+    @Override
+    public String getComponentId() {
+        return componentId;
+    }
+
+    public void setComponentId(String componentId) {
+        this.componentId = componentId;
     }
 }

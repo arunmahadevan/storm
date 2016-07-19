@@ -16,10 +16,15 @@ class EmittingProcessorContext implements ProcessorContext {
 
     @Override
     public <T> void forward(T input) {
-        if (anchor != null) {
-            collector.emit(streamId, anchor, new Values(input));
-        } else {
+        if (anchor == null) {
             throw new UnsupportedOperationException("Emitting without an anchor");
+        }
+
+        if (input instanceof Pair) {
+            Pair<?, ?> value = (Pair<?, ?>) input;
+            collector.emit(streamId, anchor, new Values(value.getFirst(), value.getSecond()));
+        } else {
+            collector.emit(streamId, anchor, new Values(input));
         }
     }
 

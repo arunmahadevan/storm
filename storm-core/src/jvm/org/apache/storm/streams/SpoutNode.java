@@ -11,6 +11,7 @@ import java.util.Set;
 class SpoutNode implements Node {
     private final IRichSpout spout;
     private final Fields outputFields;
+    private String componentId;
 
     SpoutNode(IRichSpout spout) {
         this.spout = spout;
@@ -35,5 +36,14 @@ class SpoutNode implements Node {
 
     IRichSpout getSpout() {
         return spout;
+    }
+
+    @Override
+    public String getComponentId() {
+        return componentId;
+    }
+
+    public void setComponentId(String componentId) {
+        this.componentId = componentId;
     }
 }
