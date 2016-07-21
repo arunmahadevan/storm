@@ -8,6 +8,11 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
         super(topology, node);
     }
 
+    public <R> PairStream<K, R> mapValues(Function<V, R> function) {
+        Node mapValues = streamBuilder.addNode(this, makeProcessorNode(new MapValuesProcessor<>(function), new Fields("key", "value")));
+        return new PairStream<>(streamBuilder, mapValues);
+    }
+
     public <R> PairStream<K, R> aggregateByKey(Aggregator<V, R> aggregator) {
         Node agg = streamBuilder.addNode(this, makeProcessorNode(new AggregateByKeyProcessor<>(aggregator), new Fields("key", "value")));
         return new PairStream<>(streamBuilder, agg);
@@ -22,13 +27,19 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
         return partitionBy(new Fields("key"));
     }
 
+    @Override
+    public PairStream<K, V> peek(Consumer<Pair<K, V>> action) {
+        return new PairStream<>(
+                streamBuilder,
+                addProcessorNode(new PeekProcessor<>(action), new Fields("key", "value")));
+    }
+
     PairStream<K, V> partitionBy(Fields fields) {
         return new PairStream<>(streamBuilder, addNode(new PartitionNode(
                 node.getOutputStream(), node.getOutputFields(), GroupingInfo.fields(fields))));
     }
 
     //TODO:
-    // mapValues, flatMapValues
     // join, left, right etc
 
 }

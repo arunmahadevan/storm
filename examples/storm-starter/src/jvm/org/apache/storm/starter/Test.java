@@ -142,19 +142,47 @@ public class Test {
 //        });
 
 
-        stream.map(new Function<String, Integer>() {
+//        stream.map(new Function<String, Integer>() {
+//            @Override
+//            public Integer apply(String input) {
+//                return input.length();
+//            }
+//        }).peek(new Consumer<Integer>() {
+//            @Override
+//            public void accept(Integer input) {
+//                System.out.println("-> " + input);
+//            }
+//        }).reduce(new Reducer<Integer>() {
+//            @Override
+//            public Integer apply(Integer val1, Integer val2) {
+//                return val1 + val2;
+//            }
+//        }).forEach(new Consumer<Integer>() {
+//            @Override
+//            public void accept(Integer input) {
+//                System.out.println(input);
+//            }
+//        });
+
+
+        stream.mapToPair(new PairFunction<String, String, String>() {
             @Override
-            public Integer apply(String input) {
-                return input.length();
+            public Pair<String, String> apply(String input) {
+                return new Pair<>(input, input);
             }
-        }).reduce(new Reducer<Integer>() {
+        }).peek(new Consumer<Pair<String, String>>() {
             @Override
-            public Integer apply(Integer val1, Integer val2) {
-                return val1 + val2;
+            public void accept(Pair<String, String> input) {
+                System.out.println(input);
             }
-        }).forEach(new Consumer<Integer>() {
+        }).mapValues(new Function<String, String>() {
             @Override
-            public void accept(Integer input) {
+            public String apply(String input) {
+                return input.toUpperCase();
+            }
+        }).forEach(new Consumer<Pair<String, String>>() {
+            @Override
+            public void accept(Pair<String, String> input) {
                 System.out.println(input);
             }
         });

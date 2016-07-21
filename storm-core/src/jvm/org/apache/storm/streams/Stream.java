@@ -41,10 +41,16 @@ public class Stream<T> {
 
     // TODO: window, reduceByWindow
     //       transform ?
-    //       peek
+    //       sink/state
 
     public void forEach(Consumer<T> action) {
         addProcessorNode(new ForEachProcessor<>(action), new Fields());
+    }
+
+    public Stream<T> peek(Consumer<T> action) {
+        return new Stream<>(
+                streamBuilder,
+                addProcessorNode(new PeekProcessor<>(action), new Fields("value")));
     }
 
     public <R> Stream<R> aggregate(Aggregator<T, R> aggregator) {

@@ -22,6 +22,7 @@ import org.apache.storm.LocalCluster;
 import org.apache.storm.LocalDRPC;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.generated.StormTopology;
+import org.apache.storm.trident.Stream;
 import org.apache.storm.trident.TridentState;
 import org.apache.storm.trident.TridentTopology;
 import org.apache.storm.trident.operation.BaseFunction;
@@ -54,6 +55,9 @@ public class TridentWordCount {
     spout.setCycle(true);
 
     TridentTopology topology = new TridentTopology();
+    Stream s1 = topology.newStream("spout1", spout);
+    Stream s2 = topology.newStream("spout2", spout);
+    topology.join(s1, new Fields("f1"), s2, new Fields("f2"), new Fields("a"));
     TridentState wordCounts = topology.newStream("spout1", spout).parallelismHint(16).each(new Fields("sentence"),
         new Split(), new Fields("word")).groupBy(new Fields("word")).persistentAggregate(new MemoryMapState.Factory(),
         new Count(), new Fields("count")).parallelismHint(16);
