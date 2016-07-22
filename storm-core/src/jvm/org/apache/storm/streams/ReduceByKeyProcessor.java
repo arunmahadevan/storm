@@ -22,10 +22,11 @@ public class ReduceByKeyProcessor<K, V> extends BaseProcessor<Pair<K, V>> {
             agg = reducer.apply(agg, val);
         }
         state.put(key, agg);
-        context.forward(new Pair<>(key, agg));
+        forwardAggUpdate(new Pair<>(key, agg));
     }
 
-    void finish() {
+    @Override
+    public void finish() {
         for (Map.Entry<K, V> entry : state.entrySet()) {
             context.forward(new Pair<>(entry.getKey(), entry.getValue()));
         }

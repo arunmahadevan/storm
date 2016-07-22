@@ -4,6 +4,7 @@ import org.apache.storm.generated.StormTopology;
 import org.apache.storm.topology.BoltDeclarer;
 import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.topology.IRichSpout;
+import org.apache.storm.topology.IWindowedBolt;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
@@ -12,9 +13,7 @@ import org.jgrapht.traverse.TopologicalOrderIterator;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /*
 TODO:
@@ -62,17 +61,47 @@ public class StreamBuilder {
             } else if (node instanceof ProcessorNode) {
                 ProcessorNode processorNode = (ProcessorNode) node;
                 String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
+                // TODO: group bolts
                 IRichBolt bolt = new ProcessorBolt(graph, Collections.singleton(processorNode));
                 BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt);
                 wireBolt(boltDeclarer, processorNode);
-                // TODO: put windowing operations into Windowed bolt
                 processorNode.setComponentId(boltId);
+                processorNode.setWindowed(isWindowed(processorNode));
+                //
+            } else if (node instanceof WindowNode) {
+                // TODO: include group of processor nodes inside
+                WindowNode windowNode = (WindowNode) node;
+                IWindowedBolt bolt = new WindowedProcessorBolt(graph, windowNode);
+                String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
+                BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt);
+                wireBolt(boltDeclarer, windowNode);
+                windowNode.setComponentId(boltId);
             }
         }
 //        if (!processors.isEmpty()) {
 //            topologyBuilder.setBolt("TODO", new ProcessorBolt(processors)).shuffleGrouping("TODO");
 //        }
-        return topologyBuilder.createTopology();
+        //TODO: merge with return
+        StormTopology topology = topologyBuilder.createTopology();
+        return topology;
+    }
+
+    private boolean isWindowed(Node curNode) {
+        for (Node parent : StreamUtil.<Node>getParents(graph, curNode)) {
+            if (parent instanceof WindowNode) {
+                return true;
+            } else if (parent instanceof ProcessorNode) {
+                ProcessorNode p = ((ProcessorNode) parent);
+                if (p.isWindowed()) {
+                    return true;
+                }
+            } else if (parent instanceof PartitionNode) {
+                return isWindowed(parent);
+            } else {
+                return false;
+            }
+        }
+        return false;
     }
 
     private void wireBolt(BoltDeclarer boltDeclarer, Node curNode) {

@@ -2,14 +2,12 @@ package org.apache.storm.streams;
 
 import org.apache.storm.tuple.Fields;
 
-import java.util.Collections;
-import java.util.Set;
-
 class ProcessorNode implements Node {
     private final String streamId;
     private final Processor<?> processor;
     private final Fields outputFields;
     private String componentId;
+    private boolean windowed = false;
 
     public ProcessorNode(String streamId, Processor<?> processor, Fields outputFields) {
         this.streamId = streamId;
@@ -47,5 +45,13 @@ class ProcessorNode implements Node {
 
     public void setComponentId(String componentId) {
         this.componentId = componentId;
+    }
+
+    public boolean isWindowed() {
+        return windowed;
+    }
+
+    public void setWindowed(boolean windowed) {
+        this.windowed = windowed;
     }
 }

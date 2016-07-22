@@ -22,6 +22,7 @@ import org.apache.storm.utils.Utils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 
 public class Test {
@@ -125,21 +126,17 @@ public class Test {
 
         Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
 
-//        stream.flatMapToPair(new PairFlatMapFunction<String, String, String>() {
-//            @Override
-//            public Iterable<Pair<String, String>> apply(String input) {
-//                List<Pair<String, String>> res = new ArrayList<>();
-//                for (String c: input.split("(?!^)")) {
-//                    res.add(new Pair<>(c, input));
-//                }
-//                return res;
-//            }
-//        }).forEach(new Consumer<Pair<String, String>>() {
-//            @Override
-//            public void accept(Pair<String, String> input) {
-//                System.out.println(input);
-//            }
-//        });
+        stream.mapToPair(new PairFunction<String, String, Long>() {
+            @Override
+            public Pair<String, Long> apply(String input) {
+                return new Pair(input, 1);
+            }
+        }).groupByKey().window().aggregateByKey(new Count<Long>()).forEach(new Consumer<Pair<String, Long>>() {
+            @Override
+            public void accept(Pair<String, Long> input) {
+                System.out.println(new Date() + ": " + input);
+            }
+        });
 
 
 //        stream.map(new Function<String, Integer>() {
@@ -165,27 +162,27 @@ public class Test {
 //        });
 
 
-        stream.mapToPair(new PairFunction<String, String, String>() {
-            @Override
-            public Pair<String, String> apply(String input) {
-                return new Pair<>(input, input);
-            }
-        }).peek(new Consumer<Pair<String, String>>() {
-            @Override
-            public void accept(Pair<String, String> input) {
-                System.out.println(input);
-            }
-        }).mapValues(new Function<String, String>() {
-            @Override
-            public String apply(String input) {
-                return input.toUpperCase();
-            }
-        }).forEach(new Consumer<Pair<String, String>>() {
-            @Override
-            public void accept(Pair<String, String> input) {
-                System.out.println(input);
-            }
-        });
+//        stream.mapToPair(new PairFunction<String, String, String>() {
+//            @Override
+//            public Pair<String, String> apply(String input) {
+//                return new Pair<>(input, input);
+//            }
+//        }).peek(new Consumer<Pair<String, String>>() {
+//            @Override
+//            public void accept(Pair<String, String> input) {
+//                System.out.println(input);
+//            }
+//        }).mapValues(new Function<String, String>() {
+//            @Override
+//            public String apply(String input) {
+//                return input.toUpperCase();
+//            }
+//        }).forEach(new Consumer<Pair<String, String>>() {
+//            @Override
+//            public void accept(Pair<String, String> input) {
+//                System.out.println(input);
+//            }
+//        });
 //
 //                .aggregate(new Aggregator<Long, Long>() {
 //            @Override
@@ -204,7 +201,7 @@ public class Test {
 //
 //            }
 //        });
-                        LocalCluster cluster = new LocalCluster();
+        LocalCluster cluster = new LocalCluster();
         Config config = new Config();
         cluster.submitTopology("test", config, builder.build());
         Utils.sleep(10000);

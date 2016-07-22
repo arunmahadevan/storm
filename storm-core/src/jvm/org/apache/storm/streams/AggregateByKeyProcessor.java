@@ -20,10 +20,11 @@ public class AggregateByKeyProcessor<K, V, R> extends BaseProcessor<Pair<K, V>> 
             agg = aggregator.init();
         }
         state.put(key, aggregator.apply(val, agg));
-        context.forward(new Pair<>(key, state.get(key)));
+        forwardAggUpdate(new Pair<>(key, state.get(key)));
     }
 
-    void finish() {
+    @Override
+    public void finish() {
         for (Map.Entry<K, R> entry : state.entrySet()) {
             context.forward(new Pair<>(entry.getKey(), entry.getValue()));
         }

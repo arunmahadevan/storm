@@ -6,12 +6,10 @@ import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Tuple;
 import org.jgrapht.DirectedGraph;
-import org.jgrapht.Graph;
 import org.jgrapht.graph.DirectedSubgraph;
 import org.jgrapht.traverse.TopologicalOrderIterator;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -55,12 +53,17 @@ class ProcessorBolt extends BaseRichBolt {
             }
             ProcessorContext processorContext;
             if (children.isEmpty()) {
-                EmittingProcessorContext emittingProcessorContext = new EmittingProcessorContext(processorNode.getOutputStream(), collector);
+                EmittingProcessorContext emittingProcessorContext =
+                        new EmittingProcessorContext(
+                                processorNode.getOutputStream(),
+                                collector,
+                                processorNode.getOutputFields(),
+                                processorNode.isWindowed());
                 outgoingProcessors.add(processorNode);
                 emittingProcessorContexts.add(emittingProcessorContext);
                 processorContext = emittingProcessorContext;
             } else {
-                processorContext = new ForwardingProcessorContext(children);
+                processorContext = new ForwardingProcessorContext(children, processorNode.isWindowed());
             }
             processorNode.initProcessorContext(processorContext);
         }
@@ -76,7 +79,6 @@ class ProcessorBolt extends BaseRichBolt {
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
         for (ProcessorNode node : nodes) {
-            // TODO: if group by add key to outputfields
             declarer.declareStream(node.getOutputStream(), node.getOutputFields());
         }
     }
@@ -102,12 +104,21 @@ class ProcessorBolt extends BaseRichBolt {
         while (it.hasNext()) {
             ProcessorNode processorNode = it.next();
             Processor processor = processorNode.getProcessor();
-            // TODO:
-            if (input.size() == 2) {
-                value = new Pair<>(input.getValue(0), input.getValue(1));
+            if (shouldPunctuate(processorNode, value)) {
+                processor.punctuate();
+            } else {
+                // TODO:
+                if (input.size() == 2) {
+                    value = new Pair<>(input.getValue(0), input.getValue(1));
+                }
+                processor.execute(value);
             }
-            processor.execute(value);
         }
+    }
+
+    // TODO: punctuation has arrived from all parent processors
+    private boolean shouldPunctuate(ProcessorNode processorNode, Object value) {
+        return WindowNode.PUNCTUATION.equals(value);
     }
 
 }

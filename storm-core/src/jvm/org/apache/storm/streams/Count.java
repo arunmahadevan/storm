@@ -1,5 +1,10 @@
 package org.apache.storm.streams;
 
+/**
+ * Computes the count of values.
+ *
+ * @param <T> the value type
+ */
 public class Count<T> implements Aggregator<T, Long> {
     @Override
     public Long init() {

@@ -14,12 +14,12 @@ class AggregateProcessor<T, R> extends BaseProcessor<T> {
             state = aggregator.init();
         }
         state = aggregator.apply(input, state != null ? state : aggregator.init());
-        // TODO: do this only if the stream is not windowed
-        context.forward(state);
+        forwardAggUpdate(state);
     }
 
     // TODO: should be invoked from a windowed bolt
-    void finish() {
+    @Override
+    public void finish() {
         context.forward(state);
         state = null;
     }

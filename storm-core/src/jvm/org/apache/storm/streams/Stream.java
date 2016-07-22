@@ -3,8 +3,8 @@ package org.apache.storm.streams;
 import org.apache.storm.tuple.Fields;
 
 public class Stream<T> {
-    protected StreamBuilder streamBuilder;
-    protected Node node;
+    protected final StreamBuilder streamBuilder;
+    protected final Node node;
 
     public Stream(StreamBuilder streamBuilder, Node node) {
         this.streamBuilder = streamBuilder;
@@ -39,7 +39,13 @@ public class Stream<T> {
                 addProcessorNode(new FlatMapProcessor<>(function), new Fields("key", "value")));
     }
 
-    // TODO: window, reduceByWindow
+    // TODO: add window config
+    public Stream<T> window() {
+        return new Stream<>(streamBuilder,
+                addNode(new WindowNode(UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
+    }
+
+    // TODO: reduceByWindow
     //       transform ?
     //       sink/state
 

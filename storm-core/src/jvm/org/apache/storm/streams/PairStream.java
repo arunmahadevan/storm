@@ -34,6 +34,13 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
                 addProcessorNode(new PeekProcessor<>(action), new Fields("key", "value")));
     }
 
+    @Override
+    public PairStream<K, V> window() {
+        return new PairStream<>(streamBuilder,
+                addNode(new WindowNode(UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
+    }
+
+
     PairStream<K, V> partitionBy(Fields fields) {
         return new PairStream<>(streamBuilder, addNode(new PartitionNode(
                 node.getOutputStream(), node.getOutputFields(), GroupingInfo.fields(fields))));
