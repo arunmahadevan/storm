@@ -15,7 +15,7 @@ class ReduceProcessor<T> extends BaseProcessor<T> {
         } else {
             agg = reducer.apply(agg, input);
         }
-        forwardAggUpdate(agg);
+        mayBeForwardAggUpdate(agg);
     }
 
     // TODO: should be invoked from a windowed bolt

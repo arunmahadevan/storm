@@ -1,20 +1,18 @@
 package org.apache.storm.streams;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
 class ForwardingProcessorContext implements ProcessorContext {
+    private final ProcessorNode processorNode;
     private final List<ProcessorNode> children;
-    private final boolean windowed;
 
-    public ForwardingProcessorContext(List<ProcessorNode> children) {
-        this(children, false);
-    }
-
-    public ForwardingProcessorContext(List<ProcessorNode> children, boolean windowed) {
+    public ForwardingProcessorContext(ProcessorNode processorNode, List<ProcessorNode> children) {
+        this.processorNode = processorNode;
         this.children = children;
-        this.windowed = windowed;
     }
 
     @Override
@@ -30,7 +28,7 @@ class ForwardingProcessorContext implements ProcessorContext {
     private <T> void finish() {
         for (ProcessorNode node : children) {
             Processor<T> processor = (Processor<T>) node.getProcessor();
-            processor.punctuate();
+            processor.punctuate(this);
         }
     }
 
@@ -43,6 +41,11 @@ class ForwardingProcessorContext implements ProcessorContext {
 
     @Override
     public boolean isWindowed() {
-        return windowed;
+        return processorNode.isWindowed();
+    }
+
+    @Override
+    public ProcessorNode getProcessorNode() {
+        return processorNode;
     }
 }

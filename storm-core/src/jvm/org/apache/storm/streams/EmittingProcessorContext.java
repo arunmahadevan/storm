@@ -8,22 +8,20 @@ import org.apache.storm.tuple.Values;
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
 class EmittingProcessorContext implements ProcessorContext {
-    private final String streamId;
+    private final ProcessorNode processorNode;
+    private final String outputStreamId;
     private final OutputCollector collector;
     private final Fields outputFields;
     private final boolean windowed;
     private final Values punctuation;
     private Tuple anchor;
 
-    public EmittingProcessorContext(String streamId, OutputCollector collector, Fields outputFields) {
-        this(streamId, collector, outputFields, false);
-    }
-
-    public EmittingProcessorContext(String streamId, OutputCollector collector, Fields outputFields, boolean windowed) {
-        this.streamId = streamId;
+    public EmittingProcessorContext(ProcessorNode processorNode, OutputCollector collector) {
+        this.processorNode = processorNode;
+        this.outputStreamId = processorNode.getStreamId();
+        this.outputFields = processorNode.getOutputFields();
+        this.windowed = processorNode.isWindowed();
         this.collector = collector;
-        this.outputFields = outputFields;
-        this.windowed = windowed;
         this.punctuation = createPunctuation();
     }
 
@@ -43,11 +41,11 @@ class EmittingProcessorContext implements ProcessorContext {
 
         if (input instanceof Pair) {
             Pair<?, ?> value = (Pair<?, ?>) input;
-            collector.emit(streamId, anchor, new Values(value.getFirst(), value.getSecond()));
+            collector.emit(outputStreamId, anchor, new Values(value.getFirst(), value.getSecond()));
         } else if (PUNCTUATION.equals(input)) {
-            collector.emit(streamId, anchor, punctuation);
+            collector.emit(outputStreamId, anchor, punctuation);
         } else {
-            collector.emit(streamId, anchor, new Values(input));
+            collector.emit(outputStreamId, anchor, new Values(input));
         }
     }
 
@@ -58,5 +56,10 @@ class EmittingProcessorContext implements ProcessorContext {
     @Override
     public boolean isWindowed() {
         return windowed;
+    }
+
+    @Override
+    public ProcessorNode getProcessorNode() {
+        return processorNode;
     }
 }

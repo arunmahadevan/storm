@@ -129,7 +129,7 @@ public class Test {
         stream.mapToPair(new PairFunction<String, String, Long>() {
             @Override
             public Pair<String, Long> apply(String input) {
-                return new Pair(input, 1);
+                return new Pair<>(input, 1L);
             }
         }).groupByKey().window().aggregateByKey(new Count<Long>()).forEach(new Consumer<Pair<String, Long>>() {
             @Override

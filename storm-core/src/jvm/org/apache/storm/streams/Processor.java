@@ -7,5 +7,5 @@ interface Processor<T> extends Serializable {
 
     void execute(T input);
 
-    void punctuate();
+    void punctuate(ProcessorContext parentCtx);
 }

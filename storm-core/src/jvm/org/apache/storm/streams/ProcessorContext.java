@@ -6,4 +6,6 @@ public interface ProcessorContext extends Serializable {
     <T> void forward(T input);
 
     boolean isWindowed();
+
+    ProcessorNode getProcessorNode();
 }

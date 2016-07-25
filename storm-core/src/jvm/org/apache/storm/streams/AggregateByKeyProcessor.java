@@ -20,7 +20,7 @@ public class AggregateByKeyProcessor<K, V, R> extends BaseProcessor<Pair<K, V>> 
             agg = aggregator.init();
         }
         state.put(key, aggregator.apply(val, agg));
-        forwardAggUpdate(new Pair<>(key, state.get(key)));
+        mayBeForwardAggUpdate(new Pair<>(key, state.get(key)));
     }
 
     @Override

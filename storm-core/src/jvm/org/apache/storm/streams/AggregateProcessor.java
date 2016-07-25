@@ -14,7 +14,7 @@ class AggregateProcessor<T, R> extends BaseProcessor<T> {
             state = aggregator.init();
         }
         state = aggregator.apply(input, state != null ? state : aggregator.init());
-        forwardAggUpdate(state);
+        mayBeForwardAggUpdate(state);
     }
 
     // TODO: should be invoked from a windowed bolt

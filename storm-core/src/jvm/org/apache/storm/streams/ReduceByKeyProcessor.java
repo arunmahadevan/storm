@@ -22,7 +22,7 @@ public class ReduceByKeyProcessor<K, V> extends BaseProcessor<Pair<K, V>> {
             agg = reducer.apply(agg, val);
         }
         state.put(key, agg);
-        forwardAggUpdate(new Pair<>(key, agg));
+        mayBeForwardAggUpdate(new Pair<>(key, agg));
     }
 
     @Override
