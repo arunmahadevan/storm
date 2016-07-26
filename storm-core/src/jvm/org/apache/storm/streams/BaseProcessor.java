@@ -7,21 +7,29 @@ import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
 abstract class BaseProcessor<T> implements Processor<T> {
     protected ProcessorContext context;
-    private Set<ProcessorNode> windowedParents;
-    private Set<ProcessorNode> punctuationState = new HashSet<>();
+    private Set<String> windowedParentStreams;
+    private Set<String> punctuationState = new HashSet<>();
 
     @Override
     public void init(ProcessorContext context) {
         this.context = context;
-        windowedParents = new HashSet<>(context.getProcessorNode().getWindowedParents().values());
+        windowedParentStreams = new HashSet<>(context.getProcessorNode().getWindowedParentStreams());
     }
 
     protected void finish() {
     }
 
+    protected void execute(T input) {
+    }
+
     @Override
-    public void punctuate(ProcessorContext parentCtx) {
-        if (parentCtx == null || shouldPunctuate(parentCtx.getProcessorNode())) {
+    public void execute(T input, String streamId) {
+        execute(input);
+    }
+
+    @Override
+    public void punctuate(String stream) {
+        if (stream == null || shouldPunctuate(stream)) {
             finish();
             context.forward(PUNCTUATION);
             punctuationState.clear();
@@ -34,8 +42,8 @@ abstract class BaseProcessor<T> implements Processor<T> {
         }
     }
 
-    private boolean shouldPunctuate(ProcessorNode parent) {
-        punctuationState.add(parent);
-        return punctuationState.equals(windowedParents);
+    private boolean shouldPunctuate(String parentStream) {
+        punctuationState.add(parentStream);
+        return punctuationState.equals(windowedParentStreams);
     }
 }

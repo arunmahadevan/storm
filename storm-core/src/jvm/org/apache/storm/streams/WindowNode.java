@@ -1,9 +1,10 @@
 package org.apache.storm.streams;
 
 import org.apache.storm.tuple.Fields;
-import org.apache.storm.tuple.Values;
 
-class WindowNode implements Node {
+import java.io.Serializable;
+
+class WindowNode implements Node, Serializable {
     private final String streamId;
     private final Fields outputFields;
     private String componentId;

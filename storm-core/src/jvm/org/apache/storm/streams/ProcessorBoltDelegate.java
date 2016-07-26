@@ -21,7 +21,7 @@ import java.util.Set;
 
 class ProcessorBoltDelegate implements Serializable {
     private final DirectedGraph<Node, Edge> graph;
-    private final Set<ProcessorNode> nodes;
+    private final List<ProcessorNode> nodes;
     private Map stormConf;
     private TopologyContext topologyContext;
     private OutputCollector outputCollector;
@@ -31,9 +31,9 @@ class ProcessorBoltDelegate implements Serializable {
 
     private Multimap<String, ProcessorNode> streamToInitialProcessors;
 
-    ProcessorBoltDelegate(DirectedGraph<Node, Edge> graph, Set<ProcessorNode> nodes) {
+    ProcessorBoltDelegate(DirectedGraph<Node, Edge> graph, List<ProcessorNode> nodes) {
         this.graph = graph;
-        this.nodes = new HashSet<>(nodes);
+        this.nodes = new ArrayList<>(nodes);
     }
 
     void prepare(Map stormConf, TopologyContext context, OutputCollector collector) {
@@ -53,6 +53,7 @@ class ProcessorBoltDelegate implements Serializable {
             if (children.isEmpty()) {
                 EmittingProcessorContext emittingProcessorContext =
                         new EmittingProcessorContext(processorNode, collector);
+                // TODO: outgoing are nodes that have atleast one children outside subgraph
                 outgoingProcessors.add(processorNode);
                 emittingProcessorContexts.add(emittingProcessorContext);
                 processorContext = emittingProcessorContext;
@@ -106,7 +107,7 @@ class ProcessorBoltDelegate implements Serializable {
                     clearPunctuationState(processorNode);
                 }
             } else {
-                processor.execute(value);
+                processor.execute(value, sourceStreamId);
             }
         }
     }

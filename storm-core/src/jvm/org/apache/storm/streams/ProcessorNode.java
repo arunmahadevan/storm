@@ -12,8 +12,8 @@ class ProcessorNode implements Node {
     private String componentId;
     private boolean windowed = false;
 
-    // Windowed parent processors
-    private Map<String, ProcessorNode> windowedParents;
+    // Windowed parent streams
+    private Set<String> windowedParentStreams;
 
     public ProcessorNode(String streamId, Processor<?> processor, Fields outputFields) {
         this.streamId = streamId;
@@ -61,15 +61,11 @@ class ProcessorNode implements Node {
         this.windowed = windowed;
     }
 
-    void setWindowedParents(Map<String, ProcessorNode> windowedParents) {
-        this.windowedParents = windowedParents;
-    }
-
-    Map<String, ProcessorNode> getWindowedParents() {
-        return windowedParents;
-    }
-
     Set<String> getWindowedParentStreams() {
-        return windowedParents.keySet();
+        return windowedParentStreams;
+    }
+
+    public void setWindowedParentStreams(Set<String> windowedParentStreams) {
+        this.windowedParentStreams = windowedParentStreams;
     }
 }

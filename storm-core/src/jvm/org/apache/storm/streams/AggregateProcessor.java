@@ -17,7 +17,6 @@ class AggregateProcessor<T, R> extends BaseProcessor<T> {
         mayBeForwardAggUpdate(state);
     }
 
-    // TODO: should be invoked from a windowed bolt
     @Override
     public void finish() {
         context.forward(state);

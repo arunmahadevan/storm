@@ -12,6 +12,7 @@ import org.apache.storm.streams.IndexValueMapper;
 import org.apache.storm.streams.Pair;
 import org.apache.storm.streams.PairFlatMapFunction;
 import org.apache.storm.streams.PairFunction;
+import org.apache.storm.streams.PairStream;
 import org.apache.storm.streams.Predicate;
 import org.apache.storm.streams.Reducer;
 import org.apache.storm.streams.Stream;
@@ -124,8 +125,54 @@ public class Test {
 //        });
 
 
-        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+        // JOIN
+//        PairStream<String, Long> stream2 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+//                .mapToPair(new PairFunction<String, String, Long>() {
+//                    @Override
+//                    public Pair<String, Long> apply(String input) {
+//                        return new Pair<>(input, 1L);
+//                    }
+//                }).peek(new Consumer<Pair<String, Long>>() {
+//                    @Override
+//                    public void accept(Pair<String, Long> input) {
+//                        System.out.println("<--" + input);
+//                    }
+//                });
+//
+//        Stream<String> stream1 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+//
+//        PairStream<String, Long> joinStream = stream1.mapToPair(new PairFunction<String, String, Long>() {
+//            @Override
+//            public Pair<String, Long> apply(String input) {
+//                return new Pair<>(input, 1L);
+//            }
+//        }).window().peek(new Consumer<Pair<String, Long>>() {
+//            @Override
+//            public void accept(Pair<String, Long> input) {
+//                System.out.println("--> " + input);
+//            }
+//        }).join(stream2).aggregateByKey(new Aggregator<Pair<Long, Long>, Long>() {
+//            @Override
+//            public Long init() {
+//                return 0L;
+//            }
+//            @Override
+//            public Long apply(Pair<Long, Long> value, Long aggregate) {
+//                return aggregate + 1;
+//            }
+//        });// TODO ?
+//
+//        joinStream.forEach(new Consumer<Pair<String, Long>>() {
+//            @Override
+//            public void accept(Pair<String, Long> input) {
+//                System.out.println(new Date() + ": " + input);
+//            }
+//        });
+        // END JOIN
 
+
+        // WINDOW
+        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
         stream.mapToPair(new PairFunction<String, String, Long>() {
             @Override
             public Pair<String, Long> apply(String input) {
@@ -137,6 +184,7 @@ public class Test {
                 System.out.println(new Date() + ": " + input);
             }
         });
+        //END WINDOW
 
 
 //        stream.map(new Function<String, Integer>() {

@@ -26,6 +26,7 @@ class SpoutNode implements Node {
 
     @Override
     public String getOutputStream() {
+        // TODO: use componentid + streamid
         return Utils.DEFAULT_STREAM_ID;
     }
 

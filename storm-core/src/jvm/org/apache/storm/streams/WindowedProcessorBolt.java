@@ -14,6 +14,7 @@ import org.jgrapht.graph.DefaultDirectedGraph;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,7 +25,7 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
     private final WindowNode windowNode;
 
 
-    public WindowedProcessorBolt(DefaultDirectedGraph<Node, Edge> graph, Set<ProcessorNode> nodes, WindowNode windowNode) {
+    public WindowedProcessorBolt(DefaultDirectedGraph<Node, Edge> graph, List<ProcessorNode> nodes, WindowNode windowNode) {
         delegate = new ProcessorBoltDelegate(graph, nodes);
         this.windowNode = windowNode;
         setWindowParams();
@@ -42,7 +43,7 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
 
     @Override
     public void execute(TupleWindow inputWindow) {
-        // TODO:
+        // TODO: check anchoring/acking
         for (Tuple tuple : inputWindow.get()) {
             delegate.setAnchor(tuple);
             Object value = delegate.getValue(tuple);

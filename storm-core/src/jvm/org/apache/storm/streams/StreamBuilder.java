@@ -10,6 +10,7 @@ import org.apache.storm.topology.IWindowedBolt;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
+import org.apache.storm.windowing.Window;
 import org.jgrapht.graph.DefaultDirectedGraph;
 import org.jgrapht.graph.DirectedSubgraph;
 import org.jgrapht.traverse.TopologicalOrderIterator;
@@ -22,12 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/*
-TODO:
-    1. figure out Ids
-    2. group by and aggregate
-    3. grouping fields/shuffle etc
- */
 public class StreamBuilder {
     private final DefaultDirectedGraph<Node, Edge> graph;
 
@@ -57,36 +52,51 @@ public class StreamBuilder {
     public StormTopology build() {
         TopologicalOrderIterator<Node, Edge> iterator = new TopologicalOrderIterator<>(graph);
         TopologyBuilder topologyBuilder = new TopologyBuilder();
-        Set<ProcessorNode> curGroup = new HashSet<>();
+        List<ProcessorNode> curGroup = new ArrayList<>();
         Map<Node, GroupingInfo> nodeGroupingInfo = new HashMap<>();
-        WindowNode windowNode = null;
+        Map<Node, WindowNode> windowInfo = new HashMap<>();
         while (iterator.hasNext()) {
             Node node = iterator.next();
             if (node instanceof SpoutNode) {
                 addSpout(topologyBuilder, (SpoutNode) node);
             } else if (node instanceof ProcessorNode) {
-                ProcessorNode processorNode = (ProcessorNode) node;
-                curGroup.add(processorNode);
-                processorNode.setWindowed(isWindowed(processorNode));
+                curGroup.add((ProcessorNode) node);
             } else if (node instanceof PartitionNode) {
-                PartitionNode partitionNode = (PartitionNode) node;
-                for (Node parent : parentNodes(partitionNode)) {
-                    nodeGroupingInfo.put(parent, partitionNode.getGroupingInfo());
-                }
-                if (processCurGroup(topologyBuilder, curGroup, nodeGroupingInfo, windowNode)) {
-                    windowNode = null;
-                }
+                updateNodeGroupingInfo(nodeGroupingInfo, (PartitionNode) node);
+                processCurGroup(topologyBuilder, curGroup, nodeGroupingInfo, windowInfo);
             } else if (node instanceof WindowNode) {
-                processCurGroup(topologyBuilder, curGroup, nodeGroupingInfo, windowNode);
-                windowNode = (WindowNode) node;
+                updateWindowInfo(windowInfo, (WindowNode) node);
+                processCurGroup(topologyBuilder, curGroup, nodeGroupingInfo, windowInfo);
             }
         }
-        processCurGroup(topologyBuilder, curGroup, nodeGroupingInfo, windowNode);
+        processCurGroup(topologyBuilder, curGroup, nodeGroupingInfo, windowInfo);
         return topologyBuilder.createTopology();
     }
 
-    private List<Node> parentNodes(Node curNode) {
-        List<Node> nodes = new ArrayList<>();
+    private void updateNodeGroupingInfo(Map<Node, GroupingInfo> nodeGroupingInfo,
+                                        PartitionNode partitionNode) {
+        for (Node parent : parentNodes(partitionNode)) {
+            nodeGroupingInfo.put(parent, partitionNode.getGroupingInfo());
+        }
+    }
+
+    private void updateWindowInfo(Map<Node, WindowNode> windowInfo,
+                                  WindowNode windowNode) {
+        for (Node parent : parentNodes(windowNode)) {
+            windowInfo.put(parent, windowNode);
+        }
+    }
+
+    private Set<Node> parentNodes(List<? extends Node> nodes) {
+        Set<Node> parents = new HashSet<>();
+        for (Node node : nodes) {
+            parents.addAll(parentNodes(node));
+        }
+        return parents;
+    }
+
+    private Set<Node> parentNodes(Node curNode) {
+        Set<Node> nodes = new HashSet<>();
         for (Node parent : StreamUtil.<Node>getParents(graph, curNode)) {
             if (parent instanceof ProcessorNode || parent instanceof SpoutNode) {
                 nodes.add(parent);
@@ -97,19 +107,52 @@ public class StreamBuilder {
         return nodes;
     }
 
-    private boolean processCurGroup(TopologyBuilder topologyBuilder,
-                                    Set<ProcessorNode> curGroup,
-                                    Map<Node, GroupingInfo> nodeGroupingInfo,
-                                    WindowNode windowNode) {
+    Node parentNode(Node curNode) {
+        Set<Node> parentNode = parentNodes(curNode);
+        if (parentNode.size() > 1) {
+            throw new IllegalArgumentException("Node " + curNode + " has more than one parent node.");
+        } else if (parentNode.size() == 0) {
+            throw new IllegalArgumentException("Node " + curNode + " has no parent.");
+        }
+        return parentNode.iterator().next();
+    }
+
+    private void processCurGroup(TopologyBuilder topologyBuilder,
+                                 List<ProcessorNode> curGroup,
+                                 Map<Node, GroupingInfo> nodeGroupingInfo,
+                                 Map<Node, WindowNode> windowInfo) {
         if (curGroup.isEmpty()) {
-            return false;
-        } else if (windowNode == null) {
-            addBolt(topologyBuilder, curGroup, nodeGroupingInfo);
+            return;
+        }
+
+        String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
+        for (ProcessorNode processorNode : curGroup) {
+            processorNode.setComponentId(boltId);
+            processorNode.setWindowed(isWindowed(processorNode));
+            processorNode.setWindowedParentStreams(getWindowedParentStreams(processorNode));
+        }
+        List<ProcessorNode> initialProcessors = initialProcessors(curGroup);
+        Set<WindowNode> windowNodes = getWindowNodes(initialProcessors, windowInfo);
+        if (windowNodes.isEmpty()) {
+            addBolt(topologyBuilder, boltId, curGroup, initialProcessors, nodeGroupingInfo);
+        } else if (windowNodes.size() == 1) {
+            WindowNode windowNode = windowNodes.iterator().next();
+            addWindowedBolt(topologyBuilder, boltId, curGroup, initialProcessors, nodeGroupingInfo, windowNode);
         } else {
-            addWindowedBolt(topologyBuilder, curGroup, nodeGroupingInfo, windowNode);
+            throw new IllegalStateException("More than one window config for current group " + curGroup);
         }
         curGroup.clear();
-        return true;
+    }
+
+    private Set<WindowNode> getWindowNodes(List<ProcessorNode> initialProcessors,
+                                           Map<Node, WindowNode> windowInfo) {
+        Set<WindowNode> res = new HashSet<>();
+        for (Node node : parentNodes(initialProcessors)) {
+            if (windowInfo.containsKey(node)) {
+                res.add(windowInfo.get(node));
+            }
+        }
+        return res;
     }
 
     private void addSpout(TopologyBuilder topologyBuilder, SpoutNode spoutNode) {
@@ -119,45 +162,33 @@ public class StreamBuilder {
     }
 
     private void addWindowedBolt(TopologyBuilder topologyBuilder,
-                                 Set<ProcessorNode> curGroup,
+                                 String boltId,
+                                 List<ProcessorNode> curGroup,
+                                 List<ProcessorNode> initialProcessors,
                                  Map<Node, GroupingInfo> nodeGroupingInfo,
                                  WindowNode windowNode) {
         WindowedProcessorBolt bolt = new WindowedProcessorBolt(graph, curGroup, windowNode);
-        String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
-        for (ProcessorNode processorNode : curGroup) {
-            processorNode.setComponentId(boltId);
-            processorNode.setWindowedParents(getWindowedParents(processorNode));
-        }
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt);
-        List<ProcessorNode> initialProcessors = initialProcessors(curGroup);
-        Multimap<String, ProcessorNode> streamToInitialProcessors =
-                wireBolt(boltDeclarer, initialProcessors, nodeGroupingInfo);
-        bolt.setStreamToInitialProcessors(streamToInitialProcessors);
+        bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, curGroup, initialProcessors, nodeGroupingInfo));
     }
 
     private void addBolt(TopologyBuilder topologyBuilder,
-                         Set<ProcessorNode> curGroup,
+                         String boltId,
+                         List<ProcessorNode> curGroup,
+                         List<ProcessorNode> initialProcessors,
                          Map<Node, GroupingInfo> nodeGroupingInfo) {
         ProcessorBolt bolt = new ProcessorBolt(graph, curGroup);
-        String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
-        for (ProcessorNode processorNode : curGroup) {
-            processorNode.setComponentId(boltId);
-            processorNode.setWindowedParents(getWindowedParents(processorNode));
-        }
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt);
-        List<ProcessorNode> initialProcessors = initialProcessors(curGroup);
-        Multimap<String, ProcessorNode> streamToInitialProcessors =
-                wireBolt(boltDeclarer, initialProcessors, nodeGroupingInfo);
-        bolt.setStreamToInitialProcessors(streamToInitialProcessors);
+        bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, curGroup, initialProcessors, nodeGroupingInfo));
     }
 
-    private Map<String, ProcessorNode> getWindowedParents(ProcessorNode processorNode) {
-        Map<String, ProcessorNode> res = new HashMap<>();
+    private Set<String> getWindowedParentStreams(ProcessorNode processorNode) {
+        Set<String> res = new HashSet<>();
         for (Node parent : parentNodes(processorNode)) {
             if (parent instanceof ProcessorNode) {
                 ProcessorNode pn = (ProcessorNode) parent;
                 if (pn.isWindowed()) {
-                    res.put(pn.getOutputStream(), pn);
+                    res.add(pn.getOutputStream());
                 }
             }
         }
@@ -165,33 +196,47 @@ public class StreamBuilder {
     }
 
     private Multimap<String, ProcessorNode> wireBolt(BoltDeclarer boltDeclarer,
+                                                     List<ProcessorNode> curGroup,
                                                      List<ProcessorNode> initialProcessors,
                                                      Map<Node, GroupingInfo> nodeGroupingInfo) {
         Multimap<String, ProcessorNode> streamToInitialProcessor = ArrayListMultimap.create();
+        Set<ProcessorNode> curSet = new HashSet<>(curGroup);
         for (ProcessorNode curNode : initialProcessors) {
             for (Node parent : parentNodes(curNode)) {
-                GroupingInfo groupingInfo = nodeGroupingInfo.get(parent);
-                if (groupingInfo == null) {
-                    boltDeclarer.shuffleGrouping(parent.getComponentId(), parent.getOutputStream());
-                } else if (groupingInfo.getGrouping() == GroupingInfo.Grouping.GLOBAL) {
-                    boltDeclarer.globalGrouping(parent.getComponentId(), parent.getOutputStream());
-                } else if (groupingInfo.getGrouping() == GroupingInfo.Grouping.FIELDS) {
-                    boltDeclarer.fieldsGrouping(parent.getComponentId(), parent.getOutputStream(),
-                            groupingInfo.getFields());
+                if (!curSet.contains(parent)) {
+                    GroupingInfo groupingInfo = nodeGroupingInfo.get(parent);
+                    if (groupingInfo == null) {
+                        boltDeclarer.shuffleGrouping(parent.getComponentId(), parent.getOutputStream());
+                    } else if (groupingInfo.getGrouping() == GroupingInfo.Grouping.GLOBAL) {
+                        boltDeclarer.globalGrouping(parent.getComponentId(), parent.getOutputStream());
+                    } else if (groupingInfo.getGrouping() == GroupingInfo.Grouping.FIELDS) {
+                        boltDeclarer.fieldsGrouping(parent.getComponentId(), parent.getOutputStream(),
+                                groupingInfo.getFields());
+                    }
+                    // TODO: put global stream id for spouts
+                    streamToInitialProcessor.put(parent.getOutputStream(), curNode);
                 }
-                streamToInitialProcessor.put(parent.getOutputStream(), curNode);
             }
         }
         return streamToInitialProcessor;
     }
 
-    private List<ProcessorNode> initialProcessors(Set<ProcessorNode> curGroup) {
+    private List<ProcessorNode> initialProcessors(List<ProcessorNode> curGroup) {
         List<ProcessorNode> nodes = new ArrayList<>();
-        DirectedSubgraph<Node, Edge> subgraph = new DirectedSubgraph<>(graph, new HashSet<Node>(curGroup), null);
-        for (Node pn : subgraph.vertexSet()) {
-            List<ProcessorNode> parents = StreamUtil.getParents(subgraph, pn);
-            if (parents.isEmpty()) {
-                nodes.add((ProcessorNode) pn);
+        // TODO: remove
+//        DirectedSubgraph<Node, Edge> subgraph = new DirectedSubgraph<>(graph, new HashSet<Node>(curGroup), null);
+//        for (Node pn : subgraph.vertexSet()) {
+//            List<ProcessorNode> parents = StreamUtil.getParents(subgraph, pn);
+//            if (parents.isEmpty()) {
+//                nodes.add((ProcessorNode) pn);
+//            }
+//        }
+        Set<ProcessorNode> curSet = new HashSet<>(curGroup);
+        for (ProcessorNode node : curGroup) {
+            for (Node parent : parentNodes(node)) {
+                if (!curSet.contains(parent)) {
+                    nodes.add(node);
+                }
             }
         }
         return nodes;

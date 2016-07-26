@@ -21,7 +21,7 @@ import java.util.Set;
 class ProcessorBolt extends BaseRichBolt {
     private final ProcessorBoltDelegate delegate;
 
-    public ProcessorBolt(DirectedGraph<Node, Edge> graph, Set<ProcessorNode> nodes) {
+    public ProcessorBolt(DirectedGraph<Node, Edge> graph, List<ProcessorNode> nodes) {
         delegate = new ProcessorBoltDelegate(graph, nodes);
     }
 
@@ -32,6 +32,7 @@ class ProcessorBolt extends BaseRichBolt {
 
     @Override
     public void execute(Tuple input) {
+        // TODO: check if tuple tree will complete before emitting
         delegate.setAnchor(input);
         delegate.process(delegate.getValue(input), input.getSourceStreamId());
         delegate.ack(input);

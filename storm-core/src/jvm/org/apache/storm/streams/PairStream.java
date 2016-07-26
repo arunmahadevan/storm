@@ -34,19 +34,35 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
                 addProcessorNode(new PeekProcessor<>(action), new Fields("key", "value")));
     }
 
+    public <R, V1> PairStream<K, R> join(PairStream<K, V1> otherStream, ValueJoiner<V, V1, R> valueJoiner) {
+        String leftStream = getJoinStream(node);
+        String rightStream = getJoinStream(otherStream.node);
+
+        Node joinNode = addProcessorNode(new JoinProcessor<>(leftStream, rightStream, valueJoiner), new Fields("key", "value"));
+        streamBuilder.addNode(otherStream, joinNode);
+        return new PairStream<>(streamBuilder, joinNode);
+    }
+
+    private String getJoinStream(Node node) {
+        if (node instanceof WindowNode || node instanceof PartitionNode) {
+            node = streamBuilder.parentNode(node);
+        }
+        return node.getOutputStream();
+    }
+
+    public <V1> PairStream<K, Pair<V, V1>> join(PairStream<K, V1> otherStream) {
+        return join(otherStream, new PairValueJoiner<V, V1>());
+    }
+
+
     @Override
     public PairStream<K, V> window() {
         return new PairStream<>(streamBuilder,
                 addNode(new WindowNode(UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
     }
 
-
     PairStream<K, V> partitionBy(Fields fields) {
         return new PairStream<>(streamBuilder, addNode(new PartitionNode(
                 node.getOutputStream(), node.getOutputFields(), GroupingInfo.fields(fields))));
     }
-
-    //TODO:
-    // join, left, right etc
-
 }

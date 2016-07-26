@@ -17,7 +17,6 @@ class ForwardingProcessorContext implements ProcessorContext {
 
     @Override
     public <T> void forward(T input) {
-        // TODO: received from all parents
         if (PUNCTUATION.equals(input)) {
             finish();
         } else {
@@ -28,14 +27,14 @@ class ForwardingProcessorContext implements ProcessorContext {
     private <T> void finish() {
         for (ProcessorNode node : children) {
             Processor<T> processor = (Processor<T>) node.getProcessor();
-            processor.punctuate(this);
+            processor.punctuate(processorNode.getOutputStream());
         }
     }
 
     private <T> void execute(T input) {
         for (ProcessorNode node : children) {
             Processor<T> processor = (Processor<T>) node.getProcessor();
-            processor.execute(input);
+            processor.execute(input, processorNode.getOutputStream());
         }
     }
 
