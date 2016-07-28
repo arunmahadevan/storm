@@ -1,16 +1,19 @@
 package org.apache.storm.streams;
 
-import java.util.HashSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
-import java.util.Set;
 
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
 class ForwardingProcessorContext implements ProcessorContext {
+    private static final Logger LOG = LoggerFactory.getLogger(ForwardingProcessorContext.class);
+
     private final ProcessorNode processorNode;
     private final List<ProcessorNode> children;
 
-    public ForwardingProcessorContext(ProcessorNode processorNode, List<ProcessorNode> children) {
+    ForwardingProcessorContext(ProcessorNode processorNode, List<ProcessorNode> children) {
         this.processorNode = processorNode;
         this.children = children;
     }
@@ -26,6 +29,7 @@ class ForwardingProcessorContext implements ProcessorContext {
 
     private <T> void finish() {
         for (ProcessorNode node : children) {
+            LOG.debug("Punctuating processor: {}", node);
             Processor<T> processor = (Processor<T>) node.getProcessor();
             processor.punctuate(processorNode.getOutputStream());
         }
@@ -33,6 +37,7 @@ class ForwardingProcessorContext implements ProcessorContext {
 
     private <T> void execute(T input) {
         for (ProcessorNode node : children) {
+            LOG.debug("Forward input: {} to processor node: {}", input, node);
             Processor<T> processor = (Processor<T>) node.getProcessor();
             processor.execute(input, processorNode.getOutputStream());
         }

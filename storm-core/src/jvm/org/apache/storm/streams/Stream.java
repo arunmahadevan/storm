@@ -2,6 +2,7 @@ package org.apache.storm.streams;
 
 import org.apache.storm.tuple.Fields;
 
+// TODO: for event time transparently handle "ts" field
 public class Stream<T> {
     protected final StreamBuilder streamBuilder;
     protected final Node node;

@@ -29,7 +29,6 @@ class ProcessorNode implements Node {
         return processor;
     }
 
-    // TODO: if multiple output stream should be supported
     @Override
     public Fields getOutputFields() {
         return outputFields;
@@ -37,10 +36,6 @@ class ProcessorNode implements Node {
 
     @Override
     public String getOutputStream() {
-        return streamId;
-    }
-
-    public String getStreamId() {
         return streamId;
     }
 
@@ -67,5 +62,17 @@ class ProcessorNode implements Node {
 
     public void setWindowedParentStreams(Set<String> windowedParentStreams) {
         this.windowedParentStreams = windowedParentStreams;
+    }
+
+    @Override
+    public String toString() {
+        return "ProcessorNode{" +
+                "streamId='" + streamId + '\'' +
+                ", processor=" + processor +
+                ", outputFields=" + outputFields +
+                ", componentId='" + componentId + '\'' +
+                ", windowed=" + windowed +
+                ", windowedParentStreams=" + windowedParentStreams +
+                '}';
     }
 }

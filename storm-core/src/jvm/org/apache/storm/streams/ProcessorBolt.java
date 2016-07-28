@@ -32,7 +32,6 @@ class ProcessorBolt extends BaseRichBolt {
 
     @Override
     public void execute(Tuple input) {
-        // TODO: check if tuple tree will complete before emitting
         delegate.setAnchor(input);
         delegate.process(delegate.getValue(input), input.getSourceStreamId());
         delegate.ack(input);

@@ -47,9 +47,7 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
         for (Tuple tuple : inputWindow.get()) {
             delegate.setAnchor(tuple);
             Object value = delegate.getValue(tuple);
-            if (delegate.isPunctuation(value)) {
-                delegate.ack(tuple);
-            } else {
+            if (!delegate.isPunctuation(value)) {
                 delegate.process(value, tuple.getSourceStreamId());
             }
         }

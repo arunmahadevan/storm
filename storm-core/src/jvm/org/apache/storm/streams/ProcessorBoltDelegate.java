@@ -8,18 +8,21 @@ import org.apache.storm.tuple.Tuple;
 import org.jgrapht.DirectedGraph;
 import org.jgrapht.graph.DirectedSubgraph;
 import org.jgrapht.traverse.TopologicalOrderIterator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 class ProcessorBoltDelegate implements Serializable {
+    private static final Logger LOG = LoggerFactory.getLogger(ProcessorBoltDelegate.class);
+
     private final DirectedGraph<Node, Edge> graph;
     private final List<ProcessorNode> nodes;
     private Map stormConf;
@@ -51,18 +54,36 @@ class ProcessorBoltDelegate implements Serializable {
             List<ProcessorNode> children = StreamUtil.getChildren(subgraph, processorNode);
             ProcessorContext processorContext;
             if (children.isEmpty()) {
-                EmittingProcessorContext emittingProcessorContext =
-                        new EmittingProcessorContext(processorNode, collector);
-                // TODO: outgoing are nodes that have atleast one children outside subgraph
-                outgoingProcessors.add(processorNode);
-                emittingProcessorContexts.add(emittingProcessorContext);
-                processorContext = emittingProcessorContext;
+                processorContext = createEmittingContext(processorNode);
             } else {
-                processorContext = new ForwardingProcessorContext(processorNode, children);
+                ForwardingProcessorContext forwardingContext = new ForwardingProcessorContext(processorNode, children);
+                if (hasOutgoingProcessor(processorNode, new HashSet<>(children))) {
+                    EmittingProcessorContext emittingContext = createEmittingContext(processorNode);
+                    processorContext = new ChainedProcessorContext(processorNode, forwardingContext, emittingContext);
+                } else {
+                    processorContext = forwardingContext;
+                }
             }
             processorNode.initProcessorContext(processorContext);
         }
     }
+
+    private EmittingProcessorContext createEmittingContext(ProcessorNode processorNode) {
+        EmittingProcessorContext emittingContext = new EmittingProcessorContext(processorNode, outputCollector);
+        outgoingProcessors.add(processorNode);
+        emittingProcessorContexts.add(emittingContext);
+        return emittingContext;
+    }
+
+    private boolean hasOutgoingProcessor(ProcessorNode processorNode, Set<ProcessorNode> boltChildren) {
+        for (Node node : StreamUtil.<Node>getChildren(graph, processorNode)) {
+            if (node instanceof ProcessorNode && !boltChildren.contains(node)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     void declareOutputFields(OutputFieldsDeclarer declarer) {
         for (ProcessorNode node : nodes) {
@@ -92,14 +113,14 @@ class ProcessorBoltDelegate implements Serializable {
     }
 
     void ack(Tuple tuple) {
+        LOG.debug("ACK tuple {}", tuple);
         outputCollector.ack(tuple);
     }
 
     void process(Object value, String sourceStreamId) {
+        LOG.debug("Process value {}, sourceStreamId {}", value, sourceStreamId);
         Collection<ProcessorNode> initialProcessors = streamToInitialProcessors.get(sourceStreamId);
-        Iterator<ProcessorNode> it = initialProcessors.iterator();
-        while (it.hasNext()) {
-            ProcessorNode processorNode = it.next();
+        for (ProcessorNode processorNode : initialProcessors) {
             Processor processor = processorNode.getProcessor();
             if (isPunctuation(value)) {
                 if (shouldPunctuate(processorNode, sourceStreamId)) {
