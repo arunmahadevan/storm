@@ -1,5 +1,6 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 
 // TODO: for event time transparently handle "ts" field
@@ -41,9 +42,9 @@ public class Stream<T> {
     }
 
     // TODO: add window config
-    public Stream<T> window() {
+    public Stream<T> window(Window<?, ?> window) {
         return new Stream<>(streamBuilder,
-                addNode(new WindowNode(UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
+                addNode(new WindowNode(window, UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
     }
 
     // TODO: reduceByWindow

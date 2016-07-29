@@ -1,6 +1,10 @@
 package org.apache.storm.streams;
 
+import clojure.lang.Obj;
 import com.google.common.collect.Multimap;
+import org.apache.storm.streams.windowing.SlidingWindows;
+import org.apache.storm.streams.windowing.TumblingWindows;
+import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
@@ -32,8 +36,45 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
     }
 
     private void setWindowParams() {
-        // TODO:
-        withTumblingWindow(Duration.seconds(2));
+        Window<?, ?> window = windowNode.getWindowParams();
+        if (window instanceof SlidingWindows) {
+            setSlidingWindowParams(window.getWindowLength(), window.getSlidingInterval());
+        } else if (window instanceof TumblingWindows) {
+            setTumblingWindowParams(window.getWindowLength());
+        }
+        if (window.getTimestampField() != null) {
+            withTimestampField(window.getTimestampField());
+        }
+        if (window.getLag() != null) {
+            withLag(window.getLag());
+        }
+        if (window.getLateTupleStream() != null) {
+            withLateTupleStream(window.getLateTupleStream());
+        }
+    }
+
+    private void setSlidingWindowParams(Object windowLength, Object slidingInterval) {
+        if (windowLength instanceof Count) {
+            if (slidingInterval instanceof Count) {
+                withWindow((Count) windowLength, (Count) slidingInterval);
+            } else if (slidingInterval instanceof Duration) {
+                withWindow((Count) windowLength, (Duration) slidingInterval);
+            }
+        } else if (windowLength instanceof Duration) {
+            if (slidingInterval instanceof Count) {
+                withWindow((Duration) windowLength, (Count) slidingInterval);
+            } else if (slidingInterval instanceof Duration) {
+                withWindow((Duration) windowLength, (Duration) slidingInterval);
+            }
+        }
+    }
+
+    private void setTumblingWindowParams(Object windowLength) {
+        if (windowLength instanceof Count) {
+            withTumblingWindow((Count) windowLength);
+        } else if (windowLength instanceof Duration) {
+            withTumblingWindow((Duration) windowLength);
+        }
     }
 
     @Override

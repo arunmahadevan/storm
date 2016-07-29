@@ -1,5 +1,6 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 
 public class PairStream<K, V> extends Stream<Pair<K, V>> {
@@ -56,9 +57,9 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
 
 
     @Override
-    public PairStream<K, V> window() {
+    public PairStream<K, V> window(Window<?, ?> window) {
         return new PairStream<>(streamBuilder,
-                addNode(new WindowNode(UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
+                addNode(new WindowNode(window, UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
     }
 
     PairStream<K, V> partitionBy(Fields fields) {

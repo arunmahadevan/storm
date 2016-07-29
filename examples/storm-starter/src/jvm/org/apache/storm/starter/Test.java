@@ -17,7 +17,12 @@ import org.apache.storm.streams.Predicate;
 import org.apache.storm.streams.Reducer;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
+import org.apache.storm.streams.windowing.SlidingWindows;
+import org.apache.storm.streams.windowing.TumblingWindows;
 import org.apache.storm.testing.TestWordSpout;
+
+import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
+
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.utils.Utils;
 
@@ -146,7 +151,7 @@ public class Test {
             public Pair<String, Long> apply(String input) {
                 return new Pair<>(input, 1L);
             }
-        }).window().peek(new Consumer<Pair<String, Long>>() {
+        }).window(TumblingWindows.of(Duration.seconds(2))).peek(new Consumer<Pair<String, Long>>() {
             @Override
             public void accept(Pair<String, Long> input) {
                 System.out.println("--> " + input);
@@ -156,6 +161,7 @@ public class Test {
             public Long init() {
                 return 0L;
             }
+
             @Override
             public Long apply(Pair<Long, Long> value, Long aggregate) {
                 return aggregate + 1;
@@ -251,7 +257,7 @@ public class Test {
 //        });
         LocalCluster cluster = new LocalCluster();
         Config config = new Config();
-        config.setDebug(true);
+//        config.setDebug(true);
         cluster.submitTopology("test", config, builder.build());
         Utils.sleep(10000);
         cluster.killTopology("test");

@@ -1,5 +1,6 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 
 import java.io.Serializable;
@@ -7,11 +8,13 @@ import java.io.Serializable;
 class WindowNode implements Node, Serializable {
     private final String streamId;
     private final Fields outputFields;
+    private final Window<?, ?> windowParams;
     private String componentId;
 
     public static final String PUNCTUATION = "__punctuation";
 
-    public WindowNode(String streamId, Fields outputFields) {
+    public WindowNode(Window<?, ?> windowParams, String streamId, Fields outputFields) {
+        this.windowParams = windowParams;
         this.streamId = streamId;
         this.outputFields = outputFields;
     }
@@ -33,5 +36,13 @@ class WindowNode implements Node, Serializable {
     @Override
     public String getComponentId() {
         return componentId;
+    }
+
+    public String getStreamId() {
+        return streamId;
+    }
+
+    public Window<?, ?> getWindowParams() {
+        return windowParams;
     }
 }

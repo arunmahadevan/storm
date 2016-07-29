@@ -25,6 +25,7 @@ import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -37,7 +38,7 @@ public abstract class BaseWindowedBolt implements IWindowedBolt {
     /**
      * Holds a count value for count based windows and sliding intervals.
      */
-    public static class Count {
+    public static class Count implements Serializable {
         public final int value;
 
         public Count(int value) {
@@ -65,7 +66,7 @@ public abstract class BaseWindowedBolt implements IWindowedBolt {
     /**
      * Holds a Time duration for time based windows and sliding intervals.
      */
-    public static class Duration {
+    public static class Duration implements Serializable {
         public final int value;
 
         public Duration(int value, TimeUnit timeUnit) {
