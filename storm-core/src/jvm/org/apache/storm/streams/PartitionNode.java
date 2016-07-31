@@ -2,33 +2,20 @@ package org.apache.storm.streams;
 
 import org.apache.storm.tuple.Fields;
 
-class PartitionNode implements Node {
-    private final String outputStream;
-    private final Fields outputFields;
+class PartitionNode extends Node {
     private final GroupingInfo groupingInfo;
 
     PartitionNode(String outputStream, Fields outputFields, GroupingInfo groupingInfo) {
-        this.outputStream = outputStream;
-        this.outputFields = outputFields;
+        super(outputStream, outputFields);
         this.groupingInfo = groupingInfo;
     }
 
-    @Override
-    public Fields getOutputFields() {
-        return outputFields;
+    PartitionNode(String outputStream, Fields outputFields) {
+        this(outputStream, outputFields, GroupingInfo.shuffle());
     }
 
-    @Override
-    public String getOutputStream() {
-        return outputStream;
-    }
-
-    public GroupingInfo getGroupingInfo() {
+    GroupingInfo getGroupingInfo() {
         return groupingInfo;
     }
 
-    @Override
-    public String getComponentId() {
-        throw new UnsupportedOperationException("Not implemented");
-    }
 }

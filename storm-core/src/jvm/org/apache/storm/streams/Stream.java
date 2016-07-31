@@ -13,12 +13,24 @@ public class Stream<T> {
         this.node = node;
     }
 
+    /**
+     * Returns a stream consisting of the elements of this stream that matches the given filter.
+     *
+     * @param predicate the predicate to apply to each element to determine if it should be included
+     * @return the new stream
+     */
     public Stream<T> filter(Predicate<T> predicate) {
         return new Stream<>(
                 streamBuilder,
                 addProcessorNode(new FilterProcessor<>(predicate), node.getOutputFields()));
     }
 
+    /**
+     * Returns a stream consisting of the result of applying the given mapping function to the values of this stream.
+     *
+     * @param function a mapping function to be applied to each value in this stream.
+     * @return the new stream
+     */
     public <R> Stream<R> map(Function<T, R> function) {
         return new Stream<>(
                 streamBuilder,
@@ -30,6 +42,14 @@ public class Stream<T> {
                 addProcessorNode(new MapProcessor<>(function), new Fields("key", "value")));
     }
 
+    /**
+     * Returns a stream consisting of the results of replacing each value of this stream with the contents
+     * produced by applying the provided mapping function to each value. This has the effect of applying
+     * a one-to-many transformation to the values of the stream, and then flattening the resulting elements into a new stream.
+     *
+     * @param function a mapping function to be applied to each value in this stream which produces new values.
+     * @return the new stream
+     */
     public <R> Stream<R> flatMap(FlatMapFunction<T, R> function) {
         return new Stream<>(
                 streamBuilder,
@@ -41,7 +61,6 @@ public class Stream<T> {
                 addProcessorNode(new FlatMapProcessor<>(function), new Fields("key", "value")));
     }
 
-    // TODO: add window config
     public Stream<T> window(Window<?, ?> window) {
         return new Stream<>(streamBuilder,
                 addNode(new WindowNode(window, UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
@@ -58,7 +77,7 @@ public class Stream<T> {
     public Stream<T> peek(Consumer<T> action) {
         return new Stream<>(
                 streamBuilder,
-                addProcessorNode(new PeekProcessor<>(action), new Fields("value")));
+                addProcessorNode(new PeekProcessor<>(action), node.getOutputFields()));
     }
 
     public <R> Stream<R> aggregate(Aggregator<T, R> aggregator) {
@@ -73,6 +92,22 @@ public class Stream<T> {
                 global().addProcessorNode(new ReduceProcessor<>(reducer), new Fields("value")));
     }
 
+    /**
+     * Returns a new stream with the given value of parallelism. Further operations on this stream
+     * would execute at this level of parallelism.
+     *
+     * @param parallelism the parallelism value
+     * @return the new stream
+     */
+    public Stream<T> repartition(int parallelism) {
+        PartitionNode partitionNode = new PartitionNode(node.getOutputStream(), node.getOutputFields(), null);
+        return new Stream<>(streamBuilder, addNode(partitionNode, parallelism));
+    }
+
+    public void print() {
+        forEach(new PrintConsumer<T>());
+    }
+
     Node getNode() {
         return node;
     }
@@ -85,20 +120,21 @@ public class Stream<T> {
         return streamBuilder.addNode(this, node);
     }
 
-    private Stream<T> global() {
-        return new Stream<>(streamBuilder,
-                addNode(new PartitionNode(node.getOutputStream(), node.getOutputFields(), GroupingInfo.global())));
-    }
-
     Node addProcessorNode(Processor<?> processor, Fields outputFields) {
         return addNode(makeProcessorNode(processor, outputFields));
     }
 
     ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields) {
-        return new ProcessorNode(UniqueIdGen.getInstance().getUniqueStreamId(),
-                processor, outputFields);
+        return new ProcessorNode(processor, UniqueIdGen.getInstance().getUniqueStreamId()
+                , outputFields);
     }
 
-    // TODO: repartition/parallelism
+    private Node addNode(Node node, int parallelism) {
+        return streamBuilder.addNode(this, node, parallelism);
+    }
 
+    private Stream<T> global() {
+        return new Stream<>(streamBuilder,
+                addNode(new PartitionNode(node.getOutputStream(), node.getOutputFields(), GroupingInfo.global())));
+    }
 }

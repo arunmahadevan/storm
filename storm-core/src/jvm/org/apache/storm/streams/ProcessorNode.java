@@ -5,20 +5,16 @@ import org.apache.storm.tuple.Fields;
 import java.util.Map;
 import java.util.Set;
 
-class ProcessorNode implements Node {
-    private final String streamId;
+class ProcessorNode extends Node {
     private final Processor<?> processor;
-    private final Fields outputFields;
-    private String componentId;
     private boolean windowed = false;
 
     // Windowed parent streams
     private Set<String> windowedParentStreams;
 
-    public ProcessorNode(String streamId, Processor<?> processor, Fields outputFields) {
-        this.streamId = streamId;
+    public ProcessorNode(Processor<?> processor, String outputStream, Fields outputFields) {
+        super(outputStream, outputFields);
         this.processor = processor;
-        this.outputFields = outputFields;
     }
 
     public void initProcessorContext(ProcessorContext context) {
@@ -27,25 +23,6 @@ class ProcessorNode implements Node {
 
     public Processor<?> getProcessor() {
         return processor;
-    }
-
-    @Override
-    public Fields getOutputFields() {
-        return outputFields;
-    }
-
-    @Override
-    public String getOutputStream() {
-        return streamId;
-    }
-
-    @Override
-    public String getComponentId() {
-        return componentId;
-    }
-
-    public void setComponentId(String componentId) {
-        this.componentId = componentId;
     }
 
     public boolean isWindowed() {
@@ -67,12 +44,9 @@ class ProcessorNode implements Node {
     @Override
     public String toString() {
         return "ProcessorNode{" +
-                "streamId='" + streamId + '\'' +
-                ", processor=" + processor +
-                ", outputFields=" + outputFields +
-                ", componentId='" + componentId + '\'' +
+                "processor=" + processor +
                 ", windowed=" + windowed +
                 ", windowedParentStreams=" + windowedParentStreams +
-                '}';
+                "} " + super.toString();
     }
 }

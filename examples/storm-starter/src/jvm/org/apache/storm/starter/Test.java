@@ -24,6 +24,7 @@ import org.apache.storm.testing.TestWordSpout;
 import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
 
 import org.apache.storm.tuple.Fields;
+import org.apache.storm.tuple.Tuple;
 import org.apache.storm.utils.Utils;
 
 import java.util.ArrayList;
@@ -59,27 +60,22 @@ public class Test {
 //            }
 //        });
 //
-//        stream.map(new Function<Tuple, String>() {
-//            @Override
-//            public String apply(Tuple input) {
-//                return input.getString(0);
-//            }
-//        }).filter(new Predicate<String>() {
-//            @Override
-//            public boolean test(String input) {
-//                return input.equals("nathan");
-//            }
-//        }).map(new Function<String, String>() {
-//            @Override
-//            public String apply(String input) {
-//                return input.toUpperCase();
-//            }
-//        }).forEach(new Consumer<String>() {
-//            @Override
-//            public void accept(String input) {
-//                System.out.println(input);
-//            }
-//        });
+        builder.newStream(new TestWordSpout()).map(new Function<Tuple, String>() {
+            @Override
+            public String apply(Tuple input) {
+                return input.getString(0);
+            }
+        }).filter(new Predicate<String>() {
+            @Override
+            public boolean test(String input) {
+                return input.equals("nathan");
+            }
+        }).map(new Function<String, String>() {
+            @Override
+            public String apply(String input) {
+                return input.toUpperCase();
+            }
+        }).print();
 //
 //        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
 //
@@ -131,49 +127,49 @@ public class Test {
 
 
         // JOIN
-        PairStream<String, Long> stream2 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
-                .mapToPair(new PairFunction<String, String, Long>() {
-                    @Override
-                    public Pair<String, Long> apply(String input) {
-                        return new Pair<>(input, 1L);
-                    }
-                }).peek(new Consumer<Pair<String, Long>>() {
-                    @Override
-                    public void accept(Pair<String, Long> input) {
-                        System.out.println("<--" + input);
-                    }
-                });
-
-        Stream<String> stream1 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
-
-        PairStream<String, Long> joinStream = stream1.mapToPair(new PairFunction<String, String, Long>() {
-            @Override
-            public Pair<String, Long> apply(String input) {
-                return new Pair<>(input, 1L);
-            }
-        }).window(TumblingWindows.of(Duration.seconds(2))).peek(new Consumer<Pair<String, Long>>() {
-            @Override
-            public void accept(Pair<String, Long> input) {
-                System.out.println("--> " + input);
-            }
-        }).join(stream2).aggregateByKey(new Aggregator<Pair<Long, Long>, Long>() {
-            @Override
-            public Long init() {
-                return 0L;
-            }
-
-            @Override
-            public Long apply(Pair<Long, Long> value, Long aggregate) {
-                return aggregate + 1;
-            }
-        });
-
-        joinStream.forEach(new Consumer<Pair<String, Long>>() {
-            @Override
-            public void accept(Pair<String, Long> input) {
-                System.out.println(new Date() + ": " + input);
-            }
-        });
+//        PairStream<String, Long> stream2 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+//                .mapToPair(new PairFunction<String, String, Long>() {
+//                    @Override
+//                    public Pair<String, Long> apply(String input) {
+//                        return new Pair<>(input, 1L);
+//                    }
+//                }).peek(new Consumer<Pair<String, Long>>() {
+//                    @Override
+//                    public void accept(Pair<String, Long> input) {
+//                        System.out.println("<--" + input);
+//                    }
+//                });
+//
+//        Stream<String> stream1 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+//
+//        PairStream<String, Long> joinStream = stream1.mapToPair(new PairFunction<String, String, Long>() {
+//            @Override
+//            public Pair<String, Long> apply(String input) {
+//                return new Pair<>(input, 1L);
+//            }
+//        }).window(TumblingWindows.of(Duration.seconds(2))).peek(new Consumer<Pair<String, Long>>() {
+//            @Override
+//            public void accept(Pair<String, Long> input) {
+//                System.out.println("--> " + input);
+//            }
+//        }).join(stream2).aggregateByKey(new Aggregator<Pair<Long, Long>, Long>() {
+//            @Override
+//            public Long init() {
+//                return 0L;
+//            }
+//
+//            @Override
+//            public Long apply(Pair<Long, Long> value, Long aggregate) {
+//                return aggregate + 1;
+//            }
+//        });
+//
+//        joinStream.forEach(new Consumer<Pair<String, Long>>() {
+//            @Override
+//            public void accept(Pair<String, Long> input) {
+//                System.out.println(new Date() + ": " + input);
+//            }
+//        });
         // END JOIN
 
 
@@ -255,6 +251,17 @@ public class Test {
 //
 //            }
 //        });
+
+        // PARALLELISM
+//        Stream<String> stream = builder.newStream(new TestWordSpout(), 2, new IndexValueMapper<String>(0));
+//        stream.mapToPair(new PairFunction<String, String, Long>() {
+//            @Override
+//            public Pair<String, Long> apply(String input) {
+//                return new Pair(input, 1);
+//            }
+//        }).groupByKey().repartition(3).aggregateByKey(new Count<Long>()).print();
+        //
+
         LocalCluster cluster = new LocalCluster();
         Config config = new Config();
 //        config.setDebug(true);
