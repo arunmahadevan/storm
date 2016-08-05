@@ -13,18 +13,12 @@ class SpoutNode extends Node {
 
     SpoutNode(IRichSpout spout) {
         // TODO: use componentid + streamid for spout
-        super(Utils.DEFAULT_STREAM_ID, getDefaultOutputFields(spout));
+        super(Utils.DEFAULT_STREAM_ID, getDefaultOutputFields(spout, Utils.DEFAULT_STREAM_ID));
         this.spout = spout;
     }
 
     IRichSpout getSpout() {
         return spout;
-    }
-
-    private static Fields getDefaultOutputFields(IRichSpout spout) {
-        OutputFieldsGetter getter = new OutputFieldsGetter();
-        spout.declareOutputFields(getter);
-        return new Fields(getter.getFieldsDeclaration().get(Utils.DEFAULT_STREAM_ID).get_output_fields());
     }
 
 }

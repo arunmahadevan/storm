@@ -19,6 +19,7 @@ class EmittingProcessorContext implements ProcessorContext {
     private final boolean windowed;
     private final Values punctuation;
     private Tuple anchor;
+    private boolean emitPunctuation;
 
     EmittingProcessorContext(ProcessorNode processorNode, OutputCollector collector) {
         this.processorNode = processorNode;
@@ -45,7 +46,11 @@ class EmittingProcessorContext implements ProcessorContext {
             Pair<?, ?> value = (Pair<?, ?>) input;
             emit(new Values(value.getFirst(), value.getSecond()));
         } else if (PUNCTUATION.equals(input)) {
-            emit(punctuation);
+            if (emitPunctuation) {
+                emit(punctuation);
+            } else {
+                LOG.debug("Not emitting punctuation since emitPunctuation is false");
+            }
         } else {
             emit(new Values(input));
         }
@@ -74,5 +79,13 @@ class EmittingProcessorContext implements ProcessorContext {
     @Override
     public ProcessorNode getProcessorNode() {
         return processorNode;
+    }
+
+    public boolean isEmitPunctuation() {
+        return emitPunctuation;
+    }
+
+    public void setEmitPunctuation(boolean emitPunctuation) {
+        this.emitPunctuation = emitPunctuation;
     }
 }

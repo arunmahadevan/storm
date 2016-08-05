@@ -1,8 +1,12 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.generated.StreamInfo;
+import org.apache.storm.topology.IComponent;
+import org.apache.storm.topology.OutputFieldsGetter;
 import org.apache.storm.tuple.Fields;
 
 import java.io.Serializable;
+import java.util.Map;
 
 abstract class Node implements Serializable {
     protected final String outputStream;
@@ -48,6 +52,16 @@ abstract class Node implements Serializable {
 
     public void setParallelism(int parallelism) {
         this.parallelism = parallelism;
+    }
+
+    protected static Fields getDefaultOutputFields(IComponent bolt, String streamId) {
+        OutputFieldsGetter getter = new OutputFieldsGetter();
+        bolt.declareOutputFields(getter);
+        Map<String, StreamInfo> fieldsDeclaration = getter.getFieldsDeclaration();
+        if (fieldsDeclaration != null && fieldsDeclaration.containsKey(streamId)) {
+            return new Fields(fieldsDeclaration.get(streamId).get_output_fields());
+        }
+        return new Fields();
     }
 
     @Override

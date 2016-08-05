@@ -1,6 +1,9 @@
 package org.apache.storm.streams;
 
 import org.apache.storm.streams.windowing.Window;
+import org.apache.storm.topology.IBasicBolt;
+import org.apache.storm.topology.IComponent;
+import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.tuple.Fields;
 
 // TODO: for event time transparently handle "ts" field
@@ -66,9 +69,7 @@ public class Stream<T> {
                 addNode(new WindowNode(window, UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
     }
 
-    // TODO: reduceByWindow
-    //       transform ?
-    //       sink/state
+    // TODO: reduceByWindow?
 
     public void forEach(Consumer<T> action) {
         addProcessorNode(new ForEachProcessor<>(action), new Fields());
@@ -108,6 +109,22 @@ public class Stream<T> {
         forEach(new PrintConsumer<T>());
     }
 
+    public void to(IRichBolt bolt) {
+        to(bolt, 1);
+    }
+
+    public void to(IRichBolt bolt, int parallelism) {
+        addBoltNode(new BoltNode(bolt), parallelism);
+    }
+
+    public void to(IBasicBolt bolt) {
+        to(bolt, 1);
+    }
+
+    public void to(IBasicBolt bolt, int parallelism) {
+        addBoltNode(new BoltNode(bolt), parallelism);
+    }
+
     Node getNode() {
         return node;
     }
@@ -127,6 +144,13 @@ public class Stream<T> {
     ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields) {
         return new ProcessorNode(processor, UniqueIdGen.getInstance().getUniqueStreamId()
                 , outputFields);
+    }
+
+    private void addBoltNode(BoltNode boltNode, int parallelism) {
+        String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
+        boltNode.setComponentId(boltId);
+        boltNode.setParallelism(parallelism);
+        addNode(boltNode, parallelism);
     }
 
     private Node addNode(Node node, int parallelism) {

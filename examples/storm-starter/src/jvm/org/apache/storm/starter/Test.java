@@ -3,34 +3,27 @@ package org.apache.storm.starter;
 
 import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
-import org.apache.storm.streams.Aggregator;
+import org.apache.storm.redis.bolt.RedisStoreBolt;
+import org.apache.storm.redis.common.config.JedisPoolConfig;
+import org.apache.storm.redis.common.mapper.RedisDataTypeDescription;
+import org.apache.storm.redis.common.mapper.RedisStoreMapper;
 import org.apache.storm.streams.Consumer;
 import org.apache.storm.streams.Count;
 import org.apache.storm.streams.FlatMapFunction;
 import org.apache.storm.streams.Function;
 import org.apache.storm.streams.IndexValueMapper;
 import org.apache.storm.streams.Pair;
-import org.apache.storm.streams.PairFlatMapFunction;
 import org.apache.storm.streams.PairFunction;
-import org.apache.storm.streams.PairStream;
-import org.apache.storm.streams.Predicate;
-import org.apache.storm.streams.Reducer;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
-import org.apache.storm.streams.windowing.SlidingWindows;
 import org.apache.storm.streams.windowing.TumblingWindows;
 import org.apache.storm.testing.TestWordSpout;
-
-import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
-
-import org.apache.storm.tuple.Fields;
-import org.apache.storm.tuple.Tuple;
+import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
 
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
+
+import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
 
 public class Test {
     public static void main(String[] args) {
@@ -60,22 +53,6 @@ public class Test {
 //            }
 //        });
 //
-        builder.newStream(new TestWordSpout()).map(new Function<Tuple, String>() {
-            @Override
-            public String apply(Tuple input) {
-                return input.getString(0);
-            }
-        }).filter(new Predicate<String>() {
-            @Override
-            public boolean test(String input) {
-                return input.equals("nathan");
-            }
-        }).map(new Function<String, String>() {
-            @Override
-            public String apply(String input) {
-                return input.toUpperCase();
-            }
-        }).print();
 //
 //        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
 //
@@ -262,6 +239,34 @@ public class Test {
 //        }).groupByKey().repartition(3).aggregateByKey(new Count<Long>()).print();
         //
 
+        // TO
+        String host = "127.0.0.1";
+        int port = 6379;
+
+        JedisPoolConfig poolConfig = new JedisPoolConfig.Builder()
+                .setHost(host).setPort(port).build();
+
+        RedisStoreMapper storeMapper = new WordCountStoreMapper();
+        RedisStoreBolt storeBolt = new RedisStoreBolt(poolConfig, storeMapper);
+
+        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+        stream.flatMap(new FlatMapFunction<String, String>() {
+            @Override
+            public Iterable<String> apply(String input) {
+                return Arrays.asList(input.split(" "));
+            }
+        }).mapToPair(new PairFunction<String, String, Long>() {
+            @Override
+            public Pair<String, Long> apply(String input) {
+                return new Pair<>(input, 1L);
+            }
+        })
+                .groupByKey()
+                .window(TumblingWindows.of(Duration.seconds(2)))
+                .aggregateByKey(new Count<Long>())
+                .print();
+//                .to(storeBolt);
+
         LocalCluster cluster = new LocalCluster();
         Config config = new Config();
 //        config.setDebug(true);
@@ -269,5 +274,31 @@ public class Test {
         Utils.sleep(10000);
         cluster.killTopology("test");
         cluster.shutdown();
+    }
+
+    private static class WordCountStoreMapper implements RedisStoreMapper {
+        private RedisDataTypeDescription description;
+        private final String hashKey = "wordCount";
+
+        public WordCountStoreMapper() {
+            description = new RedisDataTypeDescription(
+                    RedisDataTypeDescription.RedisDataType.HASH, hashKey);
+        }
+
+        @Override
+        public RedisDataTypeDescription getDataTypeDescription() {
+            return description;
+        }
+
+        @Override
+        public String getKeyFromTuple(ITuple tuple) {
+            return tuple.getStringByField("key");
+        }
+
+        @Override
+        public String getValueFromTuple(ITuple tuple) {
+            System.out.println(tuple);
+            return String.valueOf(tuple.getLongByField("value"));
+        }
     }
 }

@@ -1,5 +1,8 @@
 package org.apache.storm.streams;
 
+import com.google.common.base.*;
+import com.google.common.base.Predicate;
+import com.google.common.collect.Collections2;
 import com.google.common.collect.Multimap;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
@@ -57,7 +60,7 @@ class ProcessorBoltDelegate implements Serializable {
                 processorContext = createEmittingContext(processorNode);
             } else {
                 ForwardingProcessorContext forwardingContext = new ForwardingProcessorContext(processorNode, children);
-                if (hasOutgoingProcessor(processorNode, new HashSet<>(children))) {
+                if (hasOutgoingProcessors(processorNode, new HashSet<>(children))) {
                     EmittingProcessorContext emittingContext = createEmittingContext(processorNode);
                     processorContext = new ChainedProcessorContext(processorNode, forwardingContext, emittingContext);
                 } else {
@@ -70,18 +73,46 @@ class ProcessorBoltDelegate implements Serializable {
 
     private EmittingProcessorContext createEmittingContext(ProcessorNode processorNode) {
         EmittingProcessorContext emittingContext = new EmittingProcessorContext(processorNode, outputCollector);
+        // TODO: has other child nodes that are not bolt nodes?
+        // Node can have multiple os
+        // dont expose branch yet
+        // internally add a new os where punctuations are not emitted
+        // bolt nodes to subscribe to this
+        if (hasOutgoingBoltNodes(processorNode)) {
+            emittingContext.setEmitPunctuation(false);
+        }
         outgoingProcessors.add(processorNode);
         emittingProcessorContexts.add(emittingContext);
         return emittingContext;
     }
 
-    private boolean hasOutgoingProcessor(ProcessorNode processorNode, Set<ProcessorNode> boltChildren) {
-        for (Node node : StreamUtil.<Node>getChildren(graph, processorNode)) {
-            if (node instanceof ProcessorNode && !boltChildren.contains(node)) {
+    private boolean hasOutgoingProcessors(ProcessorNode processorNode, Set<ProcessorNode> boltChildren) {
+        for (Node child : getChildProcessorNodes(processorNode)) {
+            if (!boltChildren.contains(child)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private Set<ProcessorNode> getChildProcessorNodes(ProcessorNode node) {
+        Set<ProcessorNode> children = new HashSet<>();
+        for (Node child : StreamUtil.<Node>getChildren(graph, node)) {
+            if (child instanceof ProcessorNode) {
+                children.add((ProcessorNode) child);
+            }
+        }
+        return children;
+    }
+
+    private boolean hasOutgoingBoltNodes(ProcessorNode processorNode) {
+        return !Collections2.filter(StreamUtil.<Node>getChildren(graph, processorNode),
+                new Predicate<Node>() {
+                    @Override
+                    public boolean apply(Node input) {
+                        return input instanceof BoltNode;
+                    }
+                }).isEmpty();
     }
 
 

@@ -15,8 +15,11 @@ import org.apache.storm.tuple.Values;
 import org.apache.storm.windowing.TupleWindow;
 import org.jgrapht.DirectedGraph;
 import org.jgrapht.graph.DefaultDirectedGraph;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +28,8 @@ import java.util.Set;
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
 public class WindowedProcessorBolt extends BaseWindowedBolt {
+    private static final Logger LOG = LoggerFactory.getLogger(WindowedProcessorBolt.class);
+
     private final ProcessorBoltDelegate delegate;
     private final WindowNode windowNode;
 
@@ -84,11 +89,13 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
 
     @Override
     public void execute(TupleWindow inputWindow) {
+        LOG.trace("Window trigged at {}, inputWindow {}", new Date(), inputWindow);
         // TODO: check anchoring/acking
         for (Tuple tuple : inputWindow.get()) {
-            delegate.setAnchor(tuple);
             Object value = delegate.getValue(tuple);
-            if (!delegate.isPunctuation(value)) {
+            if (delegate.isPunctuation(value)) {
+                delegate.ack(tuple);
+            } else {
                 delegate.process(value, tuple.getSourceStreamId());
             }
         }

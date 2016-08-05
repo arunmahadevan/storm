@@ -6,6 +6,9 @@ import com.google.common.collect.Collections2;
 import com.google.common.collect.Multimap;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.topology.BoltDeclarer;
+import org.apache.storm.topology.IBasicBolt;
+import org.apache.storm.topology.IComponent;
+import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.topology.IRichSpout;
 import org.apache.storm.topology.TopologyBuilder;
 import org.apache.storm.tuple.Tuple;
@@ -75,6 +78,9 @@ public class StreamBuilder {
             } else if (node instanceof WindowNode) {
                 updateWindowInfo((WindowNode) node);
                 processCurGroup(topologyBuilder);
+            } else if (node instanceof BoltNode) {
+                processCurGroup(topologyBuilder);
+                addSink(topologyBuilder, (BoltNode) node);
             }
         }
         processCurGroup(topologyBuilder);
@@ -190,6 +196,21 @@ public class StreamBuilder {
         topologyBuilder.setSpout(spout.getComponentId(), spout.getSpout(), spout.getParallelism());
     }
 
+    private void addSink(TopologyBuilder topologyBuilder, BoltNode boltNode) {
+        IComponent bolt = boltNode.getBolt();
+        BoltDeclarer boltDeclarer;
+        if (bolt instanceof IRichBolt) {
+            boltDeclarer = topologyBuilder.setBolt(boltNode.getComponentId(), (IRichBolt) bolt, boltNode.getParallelism());
+        } else if (bolt instanceof IBasicBolt) {
+            boltDeclarer = topologyBuilder.setBolt(boltNode.getComponentId(), (IBasicBolt) bolt, boltNode.getParallelism());
+        } else {
+            throw new IllegalArgumentException("Expect IRichBolt or IBasicBolt in addBolt");
+        }
+        for (Node parent : parentNodes(boltNode)) {
+            declareStream(boltDeclarer, parent, nodeGroupingInfo.get(parent));
+        }
+    }
+
     private void addWindowedBolt(TopologyBuilder topologyBuilder,
                                  String boltId,
                                  List<ProcessorNode> initialProcessors,
@@ -229,15 +250,7 @@ public class StreamBuilder {
         for (ProcessorNode curNode : initialProcessors) {
             for (Node parent : parentNodes(curNode)) {
                 if (!curSet.contains(parent)) {
-                    GroupingInfo groupingInfo = nodeGroupingInfo.get(parent);
-                    if (groupingInfo == null || groupingInfo.getGrouping() == SHUFFLE) {
-                        boltDeclarer.shuffleGrouping(parent.getComponentId(), parent.getOutputStream());
-                    } else if (groupingInfo.getGrouping() == FIELDS) {
-                        boltDeclarer.fieldsGrouping(parent.getComponentId(), parent.getOutputStream(),
-                                groupingInfo.getFields());
-                    } else if (groupingInfo.getGrouping() == GLOBAL) {
-                        boltDeclarer.globalGrouping(parent.getComponentId(), parent.getOutputStream());
-                    }
+                    declareStream(boltDeclarer, parent, nodeGroupingInfo.get(parent));
                     // TODO: put global stream id for spouts
                     streamToInitialProcessor.put(parent.getOutputStream(), curNode);
                 } else {
@@ -246,6 +259,17 @@ public class StreamBuilder {
             }
         }
         return streamToInitialProcessor;
+    }
+
+    private void declareStream(BoltDeclarer boltDeclarer, Node parent, GroupingInfo groupingInfo) {
+        if (groupingInfo == null || groupingInfo.getGrouping() == SHUFFLE) {
+            boltDeclarer.shuffleGrouping(parent.getComponentId(), parent.getOutputStream());
+        } else if (groupingInfo.getGrouping() == FIELDS) {
+            boltDeclarer.fieldsGrouping(parent.getComponentId(), parent.getOutputStream(),
+                    groupingInfo.getFields());
+        } else if (groupingInfo.getGrouping() == GLOBAL) {
+            boltDeclarer.globalGrouping(parent.getComponentId(), parent.getOutputStream());
+        }
     }
 
     private List<ProcessorNode> initialProcessors(List<ProcessorNode> curGroup) {

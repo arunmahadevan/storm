@@ -1,5 +1,7 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.state.KeyValueState;
+import org.apache.storm.state.StateFactory;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 
@@ -75,6 +77,11 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
     @Override
     public PairStream<K, V> repartition(int parallelism) {
         return toPairStream(super.repartition(parallelism));
+    }
+
+    public <R> PairStream<K, R> updateStateByKey(Aggregator<V, R> aggregator) {
+        // TODO: execute this via stateful bolt ?
+        return null;
     }
 
     private String getJoinStream(Node node) {
