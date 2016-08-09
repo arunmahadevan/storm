@@ -95,14 +95,19 @@ public class StreamBuilder {
     }
 
     Node addNode(Stream<?> parent, Node newNode, int parallelism) {
-        return addNode(parent, newNode, parallelism, parent.streamId);
+        return addNode(parent, newNode, parallelism, parent.stream);
     }
 
     Node addNode(Stream<?> parent, Node newNode, int parallelism, String parentStreamId) {
+        Node parentNode = parent.getNode();
         graph.addVertex(newNode);
-        graph.addEdge(parent.getNode(), newNode);
+        graph.addEdge(parentNode, newNode);
         newNode.setParallelism(parallelism);
-        newNode.addParentStream(parentNode(newNode), parentStreamId);
+        if (parentNode instanceof WindowNode || parentNode instanceof PartitionNode) {
+            newNode.addParentStream(parentNode(parentNode), parentStreamId);
+        } else {
+            newNode.addParentStream(parentNode, parentStreamId);
+        }
         return newNode;
     }
 

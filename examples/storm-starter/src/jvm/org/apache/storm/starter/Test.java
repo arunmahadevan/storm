@@ -25,6 +25,7 @@ import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
 
 import java.util.Arrays;
+import java.util.Date;
 
 import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
 
@@ -154,18 +155,22 @@ public class Test {
 
 
         // WINDOW
-//        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
-//        stream.mapToPair(new PairFunction<String, String, Long>() {
-//            @Override
-//            public Pair<String, Long> apply(String input) {
-//                return new Pair<>(input, 1L);
-//            }
-//        }).groupByKey().window().aggregateByKey(new Count<Long>()).forEach(new Consumer<Pair<String, Long>>() {
-//            @Override
-//            public void accept(Pair<String, Long> input) {
-//                System.out.println(new Date() + ": " + input);
-//            }
-//        });
+        Stream<String> stream = builder.newStream(new TestWordSpout(), 2, new IndexValueMapper<String>(0));
+        stream.mapToPair(new PairFunction<String, String, Long>() {
+            @Override
+            public Pair<String, Long> apply(String input) {
+                return new Pair<>(input, 1L);
+            }
+        }).groupByKey()
+                .repartition(3)
+                .window(TumblingWindows.of(Duration.seconds(2)))
+                .aggregateByKey(new Count<Long>())
+                .forEach(new Consumer<Pair<String, Long>>() {
+                    @Override
+                    public void accept(Pair<String, Long> input) {
+                        System.out.println(new Date() + ": " + input);
+                    }
+                });
         //END WINDOW
 
 
@@ -242,46 +247,46 @@ public class Test {
 //        }).groupByKey().repartition(3).aggregateByKey(new Count<Long>()).print();
         //
 
-        // TO
-        String host = "127.0.0.1";
-        int port = 6379;
-
-        JedisPoolConfig poolConfig = new JedisPoolConfig.Builder()
-                .setHost(host).setPort(port).build();
-
-        RedisStoreMapper storeMapper = new WordCountStoreMapper();
-        RedisStoreBolt storeBolt = new RedisStoreBolt(poolConfig, storeMapper);
-
-        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
-        PairStream<String, Long> s2 = stream.flatMap(new FlatMapFunction<String, String>() {
-            @Override
-            public Iterable<String> apply(String input) {
-                return Arrays.asList(input.split(" "));
-            }
-        }).mapToPair(new PairFunction<String, String, Long>() {
-            @Override
-            public Pair<String, Long> apply(String input) {
-                return new Pair<>(input, 1L);
-            }
-        })
-                .groupByKey()
-                .window(TumblingWindows.of(Duration.seconds(2)))
-                .aggregateByKey(new Count<Long>());
-//                .print();
-               s2.print();
-               s2.aggregate(new Aggregator<Pair<String,Long>, Long>() {
-                   @Override
-                   public Long init() {
-                       return 0L;
-                   }
-
-                   @Override
-                   public Long apply(Pair<String, Long> value, Long aggregate) {
-                       return aggregate + value.getSecond();
-                   }
-               }).print();
-//               s2.to(storeBolt);
-
+//        // TO
+//        String host = "127.0.0.1";
+//        int port = 6379;
+//
+//        JedisPoolConfig poolConfig = new JedisPoolConfig.Builder()
+//                .setHost(host).setPort(port).build();
+//
+//        RedisStoreMapper storeMapper = new WordCountStoreMapper();
+//        RedisStoreBolt storeBolt = new RedisStoreBolt(poolConfig, storeMapper);
+//
+//        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+//        PairStream<String, Long> s2 = stream.flatMap(new FlatMapFunction<String, String>() {
+//            @Override
+//            public Iterable<String> apply(String input) {
+//                return Arrays.asList(input.split(" "));
+//            }
+//        }).mapToPair(new PairFunction<String, String, Long>() {
+//            @Override
+//            public Pair<String, Long> apply(String input) {
+//                return new Pair<>(input, 1L);
+//            }
+//        })
+//                .groupByKey()
+//                .window(TumblingWindows.of(Duration.seconds(2)))
+//                .aggregateByKey(new Count<Long>());
+////                .print();
+//               s2.print();
+//               s2.aggregate(new Aggregator<Pair<String,Long>, Long>() {
+//                   @Override
+//                   public Long init() {
+//                       return 0L;
+//                   }
+//
+//                   @Override
+//                   public Long apply(Pair<String, Long> value, Long aggregate) {
+//                       return aggregate + value.getSecond();
+//                   }
+//               }).print();
+////               s2.to(storeBolt);
+// END TO
         LocalCluster cluster = new LocalCluster();
         Config config = new Config();
 //        config.setDebug(true);

@@ -10,7 +10,7 @@ public interface Predicate<T> extends Operation {
      * Evaluates this predicate on the given argument.
      *
      * @param input the input argument
-     * @return true if the input matches the predicate, otherwise false
+     * @return true if the input matches the predicate, false otherwise
      */
     boolean test(T input);
 }

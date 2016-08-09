@@ -60,13 +60,16 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
      * @return the new stream
      */
     public <R, V1> PairStream<K, R> join(PairStream<K, V1> otherStream, ValueJoiner<V, V1, R> valueJoiner) {
-        String leftStream = streamId;
-        String rightStream = otherStream.streamId;
+        String leftStream = stream;
+        String rightStream = otherStream.stream;
         Node joinNode = addProcessorNode(new JoinProcessor<>(leftStream, rightStream, valueJoiner), new Fields("key", "value"));
         streamBuilder.addNode(otherStream, joinNode, joinNode.parallelism);
         return new PairStream<>(streamBuilder, joinNode);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PairStream<K, V> window(Window<?, ?> window) {
         return toPairStream(super.window(window));
@@ -84,7 +87,7 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
 
     private PairStream<K, V> partitionBy(Fields fields) {
         return new PairStream<>(streamBuilder, addNode(new PartitionNode(
-                streamId, node.getOutputFields(), GroupingInfo.fields(fields))));
+                stream, node.getOutputFields(), GroupingInfo.fields(fields))));
     }
 
     private PairStream<K, V> toPairStream(Stream<Pair<K, V>> stream) {

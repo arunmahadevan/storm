@@ -1,6 +1,5 @@
 package org.apache.storm.streams;
 
-import clojure.lang.Obj;
 import com.google.common.collect.Multimap;
 import org.apache.storm.streams.windowing.SlidingWindows;
 import org.apache.storm.streams.windowing.TumblingWindows;
@@ -10,20 +9,14 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.Tuple;
-import org.apache.storm.tuple.TupleImpl;
-import org.apache.storm.tuple.Values;
 import org.apache.storm.windowing.TupleWindow;
-import org.jgrapht.DirectedGraph;
 import org.jgrapht.graph.DefaultDirectedGraph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
 import java.util.Date;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
