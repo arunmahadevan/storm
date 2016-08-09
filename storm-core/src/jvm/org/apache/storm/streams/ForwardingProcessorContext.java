@@ -1,9 +1,10 @@
 package org.apache.storm.streams;
 
+import com.google.common.collect.Multimap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
+import java.util.Map;
 
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
@@ -11,11 +12,11 @@ class ForwardingProcessorContext implements ProcessorContext {
     private static final Logger LOG = LoggerFactory.getLogger(ForwardingProcessorContext.class);
 
     private final ProcessorNode processorNode;
-    private final List<ProcessorNode> children;
+    private final Multimap<String, ProcessorNode> streamToChildren;
 
-    ForwardingProcessorContext(ProcessorNode processorNode, List<ProcessorNode> children) {
+    ForwardingProcessorContext(ProcessorNode processorNode, Multimap<String, ProcessorNode> streamToChildren) {
         this.processorNode = processorNode;
-        this.children = children;
+        this.streamToChildren = streamToChildren;
     }
 
     @Override
@@ -28,18 +29,18 @@ class ForwardingProcessorContext implements ProcessorContext {
     }
 
     private <T> void finish() {
-        for (ProcessorNode node : children) {
-            LOG.debug("Punctuating processor: {}", node);
-            Processor<T> processor = (Processor<T>) node.getProcessor();
-            processor.punctuate(processorNode.getOutputStream());
+        for (Map.Entry<String, ProcessorNode> entry : streamToChildren.entries()) {
+            LOG.debug("Punctuating processor: {}", entry.getValue());
+            Processor<T> processor = (Processor<T>) entry.getValue().getProcessor();
+            processor.punctuate(entry.getKey());
         }
     }
 
     private <T> void execute(T input) {
-        for (ProcessorNode node : children) {
-            LOG.debug("Forward input: {} to processor node: {}", input, node);
-            Processor<T> processor = (Processor<T>) node.getProcessor();
-            processor.execute(input, processorNode.getOutputStream());
+        for (Map.Entry<String, ProcessorNode> entry : streamToChildren.entries()) {
+            LOG.debug("Forward input: {} to processor node: {}", input, entry.getValue());
+            Processor<T> processor = (Processor<T>) entry.getValue().getProcessor();
+            processor.execute(input, entry.getKey());
         }
     }
 

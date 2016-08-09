@@ -7,6 +7,7 @@ import org.apache.storm.redis.bolt.RedisStoreBolt;
 import org.apache.storm.redis.common.config.JedisPoolConfig;
 import org.apache.storm.redis.common.mapper.RedisDataTypeDescription;
 import org.apache.storm.redis.common.mapper.RedisStoreMapper;
+import org.apache.storm.streams.Aggregator;
 import org.apache.storm.streams.Consumer;
 import org.apache.storm.streams.Count;
 import org.apache.storm.streams.FlatMapFunction;
@@ -14,10 +15,12 @@ import org.apache.storm.streams.Function;
 import org.apache.storm.streams.IndexValueMapper;
 import org.apache.storm.streams.Pair;
 import org.apache.storm.streams.PairFunction;
+import org.apache.storm.streams.PairStream;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
 import org.apache.storm.streams.windowing.TumblingWindows;
 import org.apache.storm.testing.TestWordSpout;
+import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
 
@@ -250,7 +253,7 @@ public class Test {
         RedisStoreBolt storeBolt = new RedisStoreBolt(poolConfig, storeMapper);
 
         Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
-        stream.flatMap(new FlatMapFunction<String, String>() {
+        PairStream<String, Long> s2 = stream.flatMap(new FlatMapFunction<String, String>() {
             @Override
             public Iterable<String> apply(String input) {
                 return Arrays.asList(input.split(" "));
@@ -263,15 +266,27 @@ public class Test {
         })
                 .groupByKey()
                 .window(TumblingWindows.of(Duration.seconds(2)))
-                .aggregateByKey(new Count<Long>())
-                .print();
-//                .to(storeBolt);
+                .aggregateByKey(new Count<Long>());
+//                .print();
+               s2.print();
+               s2.aggregate(new Aggregator<Pair<String,Long>, Long>() {
+                   @Override
+                   public Long init() {
+                       return 0L;
+                   }
+
+                   @Override
+                   public Long apply(Pair<String, Long> value, Long aggregate) {
+                       return aggregate + value.getSecond();
+                   }
+               }).print();
+//               s2.to(storeBolt);
 
         LocalCluster cluster = new LocalCluster();
         Config config = new Config();
 //        config.setDebug(true);
         cluster.submitTopology("test", config, builder.build());
-        Utils.sleep(10000);
+        Utils.sleep(100000);
         cluster.killTopology("test");
         cluster.shutdown();
     }

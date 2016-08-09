@@ -12,13 +12,13 @@ import org.apache.storm.utils.Utils;
 import java.util.Map;
 
 /**
- * Bolt node holds IRich or IBasic bolts that are passed
+ * Sink node holds IRich or IBasic bolts that are passed
  * via the {@code Stream#to()} api.
  */
-public class BoltNode extends Node {
+public class SinkNode extends Node {
     private final IComponent bolt;
 
-    public BoltNode(IComponent bolt) {
+    public SinkNode(IComponent bolt) {
         super(Utils.DEFAULT_STREAM_ID, getDefaultOutputFields(bolt, Utils.DEFAULT_STREAM_ID));
         if (bolt instanceof IRichBolt || bolt instanceof IBasicBolt) {
             this.bolt = bolt;

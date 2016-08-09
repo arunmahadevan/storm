@@ -19,11 +19,11 @@ class EmittingProcessorContext implements ProcessorContext {
     private final boolean windowed;
     private final Values punctuation;
     private Tuple anchor;
-    private boolean emitPunctuation;
+    private boolean emitPunctuation = true;
 
-    EmittingProcessorContext(ProcessorNode processorNode, OutputCollector collector) {
+    EmittingProcessorContext(ProcessorNode processorNode, OutputCollector collector, String outputStreamId) {
         this.processorNode = processorNode;
-        this.outputStreamId = processorNode.getOutputStream();
+        this.outputStreamId = outputStreamId;
         this.outputFields = processorNode.getOutputFields();
         this.windowed = processorNode.isWindowed();
         this.collector = collector;

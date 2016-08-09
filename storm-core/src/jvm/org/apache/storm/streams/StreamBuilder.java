@@ -1,9 +1,12 @@
 package org.apache.storm.streams;
 
 import com.google.common.base.Function;
+import com.google.common.base.Predicate;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Collections2;
+import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Table;
 import org.apache.storm.generated.StormTopology;
 import org.apache.storm.topology.BoltDeclarer;
 import org.apache.storm.topology.IBasicBolt;
@@ -31,7 +34,7 @@ import static org.apache.storm.streams.GroupingInfo.Grouping.GLOBAL;
 public class StreamBuilder {
     private static final Logger LOG = LoggerFactory.getLogger(StreamBuilder.class);
     private final DefaultDirectedGraph<Node, Edge> graph;
-    private final Map<Node, GroupingInfo> nodeGroupingInfo = new HashMap<>();
+    private final Table<Node, String, GroupingInfo> nodeGroupingInfo = HashBasedTable.create();
     private final Map<Node, WindowNode> windowInfo = new HashMap<>();
     private final List<ProcessorNode> curGroup = new ArrayList<>();
 
@@ -78,9 +81,9 @@ public class StreamBuilder {
             } else if (node instanceof WindowNode) {
                 updateWindowInfo((WindowNode) node);
                 processCurGroup(topologyBuilder);
-            } else if (node instanceof BoltNode) {
+            } else if (node instanceof SinkNode) {
                 processCurGroup(topologyBuilder);
-                addSink(topologyBuilder, (BoltNode) node);
+                addSink(topologyBuilder, (SinkNode) node);
             }
         }
         processCurGroup(topologyBuilder);
@@ -92,9 +95,14 @@ public class StreamBuilder {
     }
 
     Node addNode(Stream<?> parent, Node newNode, int parallelism) {
+        return addNode(parent, newNode, parallelism, parent.streamId);
+    }
+
+    Node addNode(Stream<?> parent, Node newNode, int parallelism, String parentStreamId) {
         graph.addVertex(newNode);
         graph.addEdge(parent.getNode(), newNode);
         newNode.setParallelism(parallelism);
+        newNode.addParentStream(parentNode(newNode), parentStreamId);
         return newNode;
     }
 
@@ -109,9 +117,11 @@ public class StreamBuilder {
     }
 
     private void updateNodeGroupingInfo(PartitionNode partitionNode) {
-        for (Node parent : parentNodes(partitionNode)) {
-            if (partitionNode.getGroupingInfo() != null) {
-                nodeGroupingInfo.put(parent, partitionNode.getGroupingInfo());
+        if (partitionNode.getGroupingInfo() != null) {
+            for (Node parent : parentNodes(partitionNode)) {
+                for (String parentStream : partitionNode.getParentStreams(parent)) {
+                    nodeGroupingInfo.put(parent, parentStream, partitionNode.getGroupingInfo());
+                }
             }
         }
     }
@@ -196,18 +206,20 @@ public class StreamBuilder {
         topologyBuilder.setSpout(spout.getComponentId(), spout.getSpout(), spout.getParallelism());
     }
 
-    private void addSink(TopologyBuilder topologyBuilder, BoltNode boltNode) {
-        IComponent bolt = boltNode.getBolt();
+    private void addSink(TopologyBuilder topologyBuilder, SinkNode sinkNode) {
+        IComponent bolt = sinkNode.getBolt();
         BoltDeclarer boltDeclarer;
         if (bolt instanceof IRichBolt) {
-            boltDeclarer = topologyBuilder.setBolt(boltNode.getComponentId(), (IRichBolt) bolt, boltNode.getParallelism());
+            boltDeclarer = topologyBuilder.setBolt(sinkNode.getComponentId(), (IRichBolt) bolt, sinkNode.getParallelism());
         } else if (bolt instanceof IBasicBolt) {
-            boltDeclarer = topologyBuilder.setBolt(boltNode.getComponentId(), (IBasicBolt) bolt, boltNode.getParallelism());
+            boltDeclarer = topologyBuilder.setBolt(sinkNode.getComponentId(), (IBasicBolt) bolt, sinkNode.getParallelism());
         } else {
             throw new IllegalArgumentException("Expect IRichBolt or IBasicBolt in addBolt");
         }
-        for (Node parent : parentNodes(boltNode)) {
-            declareStream(boltDeclarer, parent, nodeGroupingInfo.get(parent));
+        for (Node parent : parentNodes(sinkNode)) {
+            for (String stream : sinkNode.getParentStreams(parent)) {
+                declareStream(boltDeclarer, parent, stream, nodeGroupingInfo.get(parent, stream));
+            }
         }
     }
 
@@ -234,7 +246,12 @@ public class StreamBuilder {
             if (parent instanceof ProcessorNode) {
                 ProcessorNode pn = (ProcessorNode) parent;
                 if (pn.isWindowed()) {
-                    res.add(pn.getOutputStream());
+                    res.addAll(Collections2.filter(pn.getOutputStreams(), new Predicate<String>() {
+                        @Override
+                        public boolean apply(String input) {
+                            return !StreamUtil.isSinkStream(input);
+                        }
+                    }));
                 }
             }
         }
@@ -250,9 +267,11 @@ public class StreamBuilder {
         for (ProcessorNode curNode : initialProcessors) {
             for (Node parent : parentNodes(curNode)) {
                 if (!curSet.contains(parent)) {
-                    declareStream(boltDeclarer, parent, nodeGroupingInfo.get(parent));
-                    // TODO: put global stream id for spouts
-                    streamToInitialProcessor.put(parent.getOutputStream(), curNode);
+                    for (String stream : curNode.getParentStreams(parent)) {
+                        declareStream(boltDeclarer, parent, stream, nodeGroupingInfo.get(parent, stream));
+                        // TODO: put global stream id for spouts
+                        streamToInitialProcessor.put(stream, curNode);
+                    }
                 } else {
                     LOG.debug("Parent {} of curNode {} is in curGroup {}", parent, curNode, curGroup);
                 }
@@ -261,14 +280,14 @@ public class StreamBuilder {
         return streamToInitialProcessor;
     }
 
-    private void declareStream(BoltDeclarer boltDeclarer, Node parent, GroupingInfo groupingInfo) {
+    private void declareStream(BoltDeclarer boltDeclarer, Node parent, String streamId, GroupingInfo groupingInfo) {
         if (groupingInfo == null || groupingInfo.getGrouping() == SHUFFLE) {
-            boltDeclarer.shuffleGrouping(parent.getComponentId(), parent.getOutputStream());
+            boltDeclarer.shuffleGrouping(parent.getComponentId(), streamId);
         } else if (groupingInfo.getGrouping() == FIELDS) {
-            boltDeclarer.fieldsGrouping(parent.getComponentId(), parent.getOutputStream(),
+            boltDeclarer.fieldsGrouping(parent.getComponentId(), streamId,
                     groupingInfo.getFields());
         } else if (groupingInfo.getGrouping() == GLOBAL) {
-            boltDeclarer.globalGrouping(parent.getComponentId(), parent.getOutputStream());
+            boltDeclarer.globalGrouping(parent.getComponentId(), streamId);
         }
     }
 

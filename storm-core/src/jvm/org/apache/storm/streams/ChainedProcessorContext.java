@@ -5,9 +5,9 @@ import java.util.List;
 
 class ChainedProcessorContext implements ProcessorContext {
     private final ProcessorNode processorNode;
-    private final List<ProcessorContext> contexts;
+    private final List<? extends ProcessorContext> contexts;
 
-    ChainedProcessorContext(ProcessorNode processorNode, List<ProcessorContext> contexts) {
+    ChainedProcessorContext(ProcessorNode processorNode, List<? extends ProcessorContext> contexts) {
         this.processorNode = processorNode;
         this.contexts = contexts;
     }

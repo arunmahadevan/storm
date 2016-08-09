@@ -1,26 +1,38 @@
 package org.apache.storm.streams;
 
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
 import org.apache.storm.generated.StreamInfo;
 import org.apache.storm.topology.IComponent;
 import org.apache.storm.topology.OutputFieldsGetter;
 import org.apache.storm.tuple.Fields;
 
 import java.io.Serializable;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 abstract class Node implements Serializable {
-    protected final String outputStream;
+    protected final Set<String> outputStreams = new HashSet<>();
     protected final Fields outputFields;
     protected String componentId;
     protected int parallelism;
 
-    Node(String outputStream, Fields outputFields, String componentId, int parallelism) {
-        this.outputStream = outputStream;
+    // the parent streams that this node subscribes to
+    private final Multimap<Node, String> parentStreams = ArrayListMultimap.create();
+
+    Node(Set<String> outputStreams, Fields outputFields, String componentId, int parallelism) {
+        this.outputStreams.addAll(outputStreams);
         this.outputFields = outputFields;
         this.componentId = componentId;
         this.parallelism = parallelism;
     }
 
+    Node(String outputStream, Fields outputFields, String componentId, int parallelism) {
+        this(Collections.singleton(outputStream), outputFields, componentId, parallelism);
+    }
 
     Node(String outputStream, Fields outputFields, String componentId) {
         this(outputStream, outputFields, componentId, 1);
@@ -30,12 +42,16 @@ abstract class Node implements Serializable {
         this(outputStream, outputFields, null);
     }
 
+    public void addParentStream(Node parent, String streamId) {
+        parentStreams.put(parent, streamId);
+    }
+
     public Fields getOutputFields() {
         return outputFields;
     }
 
-    public String getOutputStream() {
-        return outputStream;
+    public Set<String> getOutputStreams() {
+        return outputStreams;
     }
 
     public String getComponentId() {
@@ -64,10 +80,19 @@ abstract class Node implements Serializable {
         return new Fields();
     }
 
+    Collection<String> getParentStreams(Node parent) {
+        return parentStreams.get(parent);
+    }
+
+    String addOutputStream(String streamId) {
+        outputStreams.add(streamId);
+        return streamId;
+    }
+
     @Override
     public String toString() {
         return "Node{" +
-                "outputStream='" + outputStream + '\'' +
+                "outputStreams='" + outputStreams + '\'' +
                 ", outputFields=" + outputFields +
                 ", componentId='" + componentId + '\'' +
                 ", parallelism=" + parallelism +

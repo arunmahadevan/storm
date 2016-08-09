@@ -1,8 +1,6 @@
 package org.apache.storm.streams;
 
-import com.google.common.base.*;
-import com.google.common.base.Predicate;
-import com.google.common.collect.Collections2;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
@@ -59,10 +57,15 @@ class ProcessorBoltDelegate implements Serializable {
             if (children.isEmpty()) {
                 processorContext = createEmittingContext(processorNode);
             } else {
-                ForwardingProcessorContext forwardingContext = new ForwardingProcessorContext(processorNode, children);
-                if (hasOutgoingProcessors(processorNode, new HashSet<>(children))) {
-                    EmittingProcessorContext emittingContext = createEmittingContext(processorNode);
-                    processorContext = new ChainedProcessorContext(processorNode, forwardingContext, emittingContext);
+                Multimap<String, ProcessorNode> streamToChildren = ArrayListMultimap.create();
+                for (ProcessorNode child : children) {
+                    for (String stream : child.getParentStreams(processorNode)) {
+                        streamToChildren.put(stream, child);
+                    }
+                }
+                ForwardingProcessorContext forwardingContext = new ForwardingProcessorContext(processorNode, streamToChildren);
+                if (hasOutgoingChild(processorNode, new HashSet<>(children))) {
+                    processorContext = new ChainedProcessorContext(processorNode, forwardingContext, createEmittingContext(processorNode));
                 } else {
                     processorContext = forwardingContext;
                 }
@@ -71,54 +74,48 @@ class ProcessorBoltDelegate implements Serializable {
         }
     }
 
-    private EmittingProcessorContext createEmittingContext(ProcessorNode processorNode) {
-        EmittingProcessorContext emittingContext = new EmittingProcessorContext(processorNode, outputCollector);
-        // TODO: has other child nodes that are not bolt nodes?
-        // Node can have multiple os
-        // dont expose branch yet
-        // internally add a new os where punctuations are not emitted
-        // bolt nodes to subscribe to this
-        if (hasOutgoingBoltNodes(processorNode)) {
-            emittingContext.setEmitPunctuation(false);
+    private ProcessorContext createEmittingContext(ProcessorNode processorNode) {
+        List<EmittingProcessorContext> emittingContexts = new ArrayList<>();
+        for (String stream : processorNode.getOutputStreams()) {
+            EmittingProcessorContext emittingContext = new EmittingProcessorContext(processorNode, outputCollector, stream);
+            if (StreamUtil.isSinkStream(stream)) {
+                emittingContext.setEmitPunctuation(false);
+            }
+            emittingContexts.add(emittingContext);
         }
+        emittingProcessorContexts.addAll(emittingContexts);
         outgoingProcessors.add(processorNode);
-        emittingProcessorContexts.add(emittingContext);
-        return emittingContext;
+        return new ChainedProcessorContext(processorNode, emittingContexts);
     }
 
-    private boolean hasOutgoingProcessors(ProcessorNode processorNode, Set<ProcessorNode> boltChildren) {
-        for (Node child : getChildProcessorNodes(processorNode)) {
-            if (!boltChildren.contains(child)) {
+    private boolean hasOutgoingChild(ProcessorNode processorNode, Set<ProcessorNode> boltChildren) {
+        for (Node child : getChildNodes(processorNode)) {
+            if (child instanceof  ProcessorNode && !boltChildren.contains(child)) {
+                return true;
+            } else if (child instanceof SinkNode) {
                 return true;
             }
         }
         return false;
     }
 
-    private Set<ProcessorNode> getChildProcessorNodes(ProcessorNode node) {
-        Set<ProcessorNode> children = new HashSet<>();
+    private Set<Node> getChildNodes(Node node) {
+        Set<Node> children = new HashSet<>();
         for (Node child : StreamUtil.<Node>getChildren(graph, node)) {
-            if (child instanceof ProcessorNode) {
-                children.add((ProcessorNode) child);
+            if (child instanceof WindowNode || child instanceof PartitionNode) {
+                children.addAll(getChildNodes(child));
+            } else {
+                children.add(child);
             }
         }
         return children;
     }
 
-    private boolean hasOutgoingBoltNodes(ProcessorNode processorNode) {
-        return !Collections2.filter(StreamUtil.<Node>getChildren(graph, processorNode),
-                new Predicate<Node>() {
-                    @Override
-                    public boolean apply(Node input) {
-                        return input instanceof BoltNode;
-                    }
-                }).isEmpty();
-    }
-
-
     void declareOutputFields(OutputFieldsDeclarer declarer) {
         for (ProcessorNode node : nodes) {
-            declarer.declareStream(node.getOutputStream(), node.getOutputFields());
+            for (String stream : node.getOutputStreams()) {
+                declarer.declareStream(stream, node.getOutputFields());
+            }
         }
     }
 

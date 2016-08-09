@@ -1,7 +1,5 @@
 package org.apache.storm.streams;
 
-import org.apache.storm.state.KeyValueState;
-import org.apache.storm.state.StateFactory;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 
@@ -62,8 +60,8 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
      * @return the new stream
      */
     public <R, V1> PairStream<K, R> join(PairStream<K, V1> otherStream, ValueJoiner<V, V1, R> valueJoiner) {
-        String leftStream = getJoinStream(node);
-        String rightStream = getJoinStream(otherStream.node);
+        String leftStream = streamId;
+        String rightStream = otherStream.streamId;
         Node joinNode = addProcessorNode(new JoinProcessor<>(leftStream, rightStream, valueJoiner), new Fields("key", "value"));
         streamBuilder.addNode(otherStream, joinNode, joinNode.parallelism);
         return new PairStream<>(streamBuilder, joinNode);
@@ -84,16 +82,9 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
         return null;
     }
 
-    private String getJoinStream(Node node) {
-        if (node instanceof WindowNode || node instanceof PartitionNode) {
-            node = streamBuilder.parentNode(node);
-        }
-        return node.getOutputStream();
-    }
-
     private PairStream<K, V> partitionBy(Fields fields) {
         return new PairStream<>(streamBuilder, addNode(new PartitionNode(
-                node.getOutputStream(), node.getOutputFields(), GroupingInfo.fields(fields))));
+                streamId, node.getOutputFields(), GroupingInfo.fields(fields))));
     }
 
     private PairStream<K, V> toPairStream(Stream<Pair<K, V>> stream) {

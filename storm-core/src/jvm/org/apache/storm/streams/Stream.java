@@ -2,7 +2,6 @@ package org.apache.storm.streams;
 
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.topology.IBasicBolt;
-import org.apache.storm.topology.IComponent;
 import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.tuple.Fields;
 
@@ -10,10 +9,16 @@ import org.apache.storm.tuple.Fields;
 public class Stream<T> {
     protected final StreamBuilder streamBuilder;
     protected final Node node;
+    protected final String streamId;
 
     public Stream(StreamBuilder streamBuilder, Node node) {
+        this(streamBuilder, node, node.getOutputStreams().iterator().next());
+    }
+
+    public Stream(StreamBuilder streamBuilder, Node node, String streamId) {
         this.streamBuilder = streamBuilder;
         this.node = node;
+        this.streamId = streamId;
     }
 
     /**
@@ -66,7 +71,7 @@ public class Stream<T> {
 
     public Stream<T> window(Window<?, ?> window) {
         return new Stream<>(streamBuilder,
-                addNode(new WindowNode(window, UniqueIdGen.getInstance().getUniqueStreamId(), node.getOutputFields())));
+                addNode(new WindowNode(window, streamId, node.getOutputFields())));
     }
 
     // TODO: reduceByWindow?
@@ -101,7 +106,7 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> repartition(int parallelism) {
-        PartitionNode partitionNode = new PartitionNode(node.getOutputStream(), node.getOutputFields(), null);
+        PartitionNode partitionNode = new PartitionNode(streamId, node.getOutputFields(), null);
         return new Stream<>(streamBuilder, addNode(partitionNode, parallelism));
     }
 
@@ -114,7 +119,7 @@ public class Stream<T> {
     }
 
     public void to(IRichBolt bolt, int parallelism) {
-        addBoltNode(new BoltNode(bolt), parallelism);
+        addSinkNode(new SinkNode(bolt), parallelism);
     }
 
     public void to(IBasicBolt bolt) {
@@ -122,7 +127,7 @@ public class Stream<T> {
     }
 
     public void to(IBasicBolt bolt, int parallelism) {
-        addBoltNode(new BoltNode(bolt), parallelism);
+        addSinkNode(new SinkNode(bolt), parallelism);
     }
 
     Node getNode() {
@@ -146,19 +151,23 @@ public class Stream<T> {
                 , outputFields);
     }
 
-    private void addBoltNode(BoltNode boltNode, int parallelism) {
+    private void addSinkNode(SinkNode sinkNode, int parallelism) {
         String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
-        boltNode.setComponentId(boltId);
-        boltNode.setParallelism(parallelism);
-        addNode(boltNode, parallelism);
+        sinkNode.setComponentId(boltId);
+        sinkNode.setParallelism(parallelism);
+        addNode(sinkNode, parallelism, node.addOutputStream(StreamUtil.getSinkStream(streamId)));
     }
 
     private Node addNode(Node node, int parallelism) {
         return streamBuilder.addNode(this, node, parallelism);
     }
 
+    private Node addNode(Node node, int parallelism, String parentStreamId) {
+        return streamBuilder.addNode(this, node, parallelism, parentStreamId);
+    }
+
     private Stream<T> global() {
         return new Stream<>(streamBuilder,
-                addNode(new PartitionNode(node.getOutputStream(), node.getOutputFields(), GroupingInfo.global())));
+                addNode(new PartitionNode(streamId, node.getOutputFields(), GroupingInfo.global())));
     }
 }
