@@ -3,7 +3,7 @@ package org.apache.storm.streams;
 import java.util.HashMap;
 import java.util.Map;
 
-public class AggregateByKeyProcessor<K, V, R> extends BaseProcessor<Pair<K, V>> {
+public class AggregateByKeyProcessor<K, V, R> extends BaseProcessor<Pair<K, V>> implements BatchProcessor {
     private final Aggregator<V, R> aggregator;
     private final Map<K, R> state = new HashMap<>();
 

@@ -32,4 +32,12 @@ class StreamUtil {
     static String getSinkStream(String streamId) {
         return streamId + "__sink";
     }
+
+    static boolean isPunctuation(Object value) {
+        if (value instanceof Pair) {
+            value = ((Pair) value).getFirst();
+        }
+        return WindowNode.PUNCTUATION.equals(value);
+    }
+
 }

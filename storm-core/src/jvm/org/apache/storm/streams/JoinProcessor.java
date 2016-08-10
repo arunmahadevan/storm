@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-class JoinProcessor<K, R, V1, V2> extends BaseProcessor<Pair<K, ?>> {
+class JoinProcessor<K, R, V1, V2> extends BaseProcessor<Pair<K, ?>> implements BatchProcessor {
     private final ValueJoiner<V1, V2, R> valueJoiner;
     private final String leftStream;
     private final String rightStream;
@@ -41,7 +41,7 @@ class JoinProcessor<K, R, V1, V2> extends BaseProcessor<Pair<K, ?>> {
     }
 
     @Override
-    protected void finish() {
+    public void finish() {
         joinAndForward(leftRows, rightRows);
         leftRows.clear();
         rightRows.clear();

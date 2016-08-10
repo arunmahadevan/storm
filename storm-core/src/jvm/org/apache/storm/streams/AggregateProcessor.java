@@ -1,6 +1,6 @@
 package org.apache.storm.streams;
 
-class AggregateProcessor<T, R> extends BaseProcessor<T> {
+class AggregateProcessor<T, R> extends BaseProcessor<T> implements BatchProcessor {
     private final Aggregator<T, R> aggregator;
     private R state = null;
 

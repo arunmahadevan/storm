@@ -1,6 +1,6 @@
 package org.apache.storm.streams;
 
-class ReduceProcessor<T> extends BaseProcessor<T> {
+class ReduceProcessor<T> extends BaseProcessor<T> implements BatchProcessor {
     private final Reducer<T> reducer;
     private T agg;
 
@@ -18,7 +18,6 @@ class ReduceProcessor<T> extends BaseProcessor<T> {
         mayBeForwardAggUpdate(agg);
     }
 
-    // TODO: should be invoked from a windowed bolt
     @Override
     public void finish() {
         context.forward(agg);

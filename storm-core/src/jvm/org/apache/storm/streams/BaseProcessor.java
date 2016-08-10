@@ -16,9 +16,6 @@ abstract class BaseProcessor<T> implements Processor<T> {
         windowedParentStreams = new HashSet<>(context.getProcessorNode().getWindowedParentStreams());
     }
 
-    protected void finish() {
-    }
-
     protected void execute(T input) {
     }
 
@@ -30,7 +27,9 @@ abstract class BaseProcessor<T> implements Processor<T> {
     @Override
     public void punctuate(String stream) {
         if (stream == null || shouldPunctuate(stream)) {
-            finish();
+            if (this instanceof BatchProcessor) {
+                ((BatchProcessor) this).finish();
+            }
             context.forward(PUNCTUATION);
             punctuationState.clear();
         }

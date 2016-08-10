@@ -1,11 +1,17 @@
 package org.apache.storm.streams;
 
+import com.google.common.base.Function;
+import com.google.common.collect.Collections2;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
@@ -18,7 +24,7 @@ class EmittingProcessorContext implements ProcessorContext {
     private final Fields outputFields;
     private final boolean windowed;
     private final Values punctuation;
-    private Tuple anchor;
+    private final List<RefCountedTuple> anchors = new ArrayList<>();
     private boolean emitPunctuation = true;
 
     EmittingProcessorContext(ProcessorNode processorNode, OutputCollector collector, String outputStreamId) {
@@ -51,24 +57,63 @@ class EmittingProcessorContext implements ProcessorContext {
             } else {
                 LOG.debug("Not emitting punctuation since emitPunctuation is false");
             }
+            maybeAck();
         } else {
             emit(new Values(input));
         }
     }
 
+    private void maybeAck() {
+        if (!anchors.isEmpty()) {
+            for (RefCountedTuple anchor : anchors) {
+                anchor.decrement();
+                if (anchor.shouldAck()) {
+                    LOG.info("Acking {} ", anchor);
+                    collector.ack(anchor.tuple());
+                }
+            }
+            anchors.clear();
+        }
+    }
+
+    private Collection<Tuple> tuples(List<RefCountedTuple> anchors) {
+        return Collections2.transform(anchors, new Function<RefCountedTuple, Tuple>() {
+            @Override
+            public Tuple apply(RefCountedTuple input) {
+                return input.tuple();
+            }
+        });
+    }
+
     private void emit(Values values) {
-        if (anchor != null) {
-            LOG.debug("Emit, outputStreamId: {}, anchor: {}, values: {}", outputStreamId, anchor, values);
-            collector.emit(outputStreamId, anchor, values);
+        if (!anchors.isEmpty()) {
+            LOG.debug("Emit, outputStreamId: {}, anchors: {}, values: {}", outputStreamId, anchors, values);
+            collector.emit(outputStreamId, tuples(anchors), values);
         } else {
+            // for windowed bolt, windowed output collector will do the anchoring/acking
             LOG.debug("Emit un-anchored, outputStreamId: {}, values: {}", outputStreamId, values);
-            // for windowed bolt, windowed output collector will do the anchoring
             collector.emit(outputStreamId, values);
         }
     }
 
-    void setAnchor(Tuple anchor) {
-        this.anchor = anchor;
+    void setAnchor(RefCountedTuple anchor) {
+        if (processorNode.isWindowed() && processorNode.isBatch()) {
+            anchor.increment();
+            anchors.add(anchor);
+        } else {
+            if (anchors.isEmpty()) {
+                anchors.add(anchor);
+            } else {
+                anchors.set(0, anchor);
+            }
+             /*
+             * track punctuation in non-batch mode so that the
+             * punctuation is acked after all the processors have emitted the punctuation downstream.
+             */
+            if (StreamUtil.isPunctuation(anchor.tuple().getValue(0))) {
+                anchor.increment();
+            }
+        }
     }
 
     @Override

@@ -90,7 +90,7 @@ class ProcessorBoltDelegate implements Serializable {
 
     private boolean hasOutgoingChild(ProcessorNode processorNode, Set<ProcessorNode> boltChildren) {
         for (Node child : getChildNodes(processorNode)) {
-            if (child instanceof  ProcessorNode && !boltChildren.contains(child)) {
+            if (child instanceof ProcessorNode && !boltChildren.contains(child)) {
                 return true;
             } else if (child instanceof SinkNode) {
                 return true;
@@ -119,9 +119,9 @@ class ProcessorBoltDelegate implements Serializable {
         }
     }
 
-    void setAnchor(Tuple input) {
+    void setAnchor(RefCountedTuple tuple) {
         for (EmittingProcessorContext ctx : emittingProcessorContexts) {
-            ctx.setAnchor(input);
+            ctx.setAnchor(tuple);
         }
     }
 
@@ -140,9 +140,12 @@ class ProcessorBoltDelegate implements Serializable {
         return value;
     }
 
-    void ack(Tuple tuple) {
-        LOG.debug("ACK tuple {}", tuple);
-        outputCollector.ack(tuple);
+    // if there were no windowed/batched processors, we would ack immediately
+    void ack(RefCountedTuple tuple) {
+        if (tuple.shouldAck()) {
+            LOG.debug("ACKing tuple {}", tuple);
+            outputCollector.ack(tuple.tuple());
+        }
     }
 
     void process(Object value, String sourceStreamId) {
@@ -150,7 +153,7 @@ class ProcessorBoltDelegate implements Serializable {
         Collection<ProcessorNode> initialProcessors = streamToInitialProcessors.get(sourceStreamId);
         for (ProcessorNode processorNode : initialProcessors) {
             Processor processor = processorNode.getProcessor();
-            if (isPunctuation(value)) {
+            if (StreamUtil.isPunctuation(value)) {
                 if (shouldPunctuate(processorNode, sourceStreamId)) {
                     processor.punctuate(null);
                     clearPunctuationState(processorNode);
@@ -190,10 +193,4 @@ class ProcessorBoltDelegate implements Serializable {
         }
     }
 
-    boolean isPunctuation(Object value) {
-        if (value instanceof Pair) {
-            value = ((Pair) value).getFirst();
-        }
-        return WindowNode.PUNCTUATION.equals(value);
-    }
 }

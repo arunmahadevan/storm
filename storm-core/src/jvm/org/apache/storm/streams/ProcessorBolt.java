@@ -7,16 +7,9 @@ import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Tuple;
 import org.jgrapht.DirectedGraph;
-import org.jgrapht.graph.DirectedSubgraph;
-import org.jgrapht.traverse.TopologicalOrderIterator;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 class ProcessorBolt extends BaseRichBolt {
     private final ProcessorBoltDelegate delegate;
@@ -32,9 +25,10 @@ class ProcessorBolt extends BaseRichBolt {
 
     @Override
     public void execute(Tuple input) {
-        delegate.setAnchor(input);
+        RefCountedTuple refCountedTuple = new RefCountedTuple(input);
+        delegate.setAnchor(refCountedTuple);
         delegate.process(delegate.getValue(input), input.getSourceStreamId());
-        delegate.ack(input);
+        delegate.ack(refCountedTuple);
     }
 
     @Override

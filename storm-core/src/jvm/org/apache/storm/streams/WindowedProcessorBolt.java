@@ -82,17 +82,14 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
 
     @Override
     public void execute(TupleWindow inputWindow) {
-        LOG.trace("Window trigged at {}, inputWindow {}", new Date(), inputWindow);
+        LOG.trace("Window triggered at {}, inputWindow {}", new Date(), inputWindow);
         // TODO: check anchoring/acking
         for (Tuple tuple : inputWindow.get()) {
             Object value = delegate.getValue(tuple);
-            if (delegate.isPunctuation(value)) {
-                delegate.ack(tuple);
-            } else {
+            if (!StreamUtil.isPunctuation(value)) {
                 delegate.process(value, tuple.getSourceStreamId());
             }
         }
-
         for (String stream : delegate.getInitialStreams()) {
             delegate.process(PUNCTUATION, stream);
         }

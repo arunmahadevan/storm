@@ -2,11 +2,11 @@ package org.apache.storm.streams;
 
 import org.apache.storm.tuple.Fields;
 
-import java.util.Map;
 import java.util.Set;
 
 class ProcessorNode extends Node {
     private final Processor<?> processor;
+    private final boolean isBatch;
     private boolean windowed = false;
 
     // Windowed parent streams
@@ -14,6 +14,7 @@ class ProcessorNode extends Node {
 
     public ProcessorNode(Processor<?> processor, String outputStream, Fields outputFields) {
         super(outputStream, outputFields);
+        this.isBatch = processor instanceof BatchProcessor;
         this.processor = processor;
     }
 
@@ -27,6 +28,10 @@ class ProcessorNode extends Node {
 
     public boolean isWindowed() {
         return windowed;
+    }
+
+    public boolean isBatch() {
+        return isBatch;
     }
 
     public void setWindowed(boolean windowed) {
