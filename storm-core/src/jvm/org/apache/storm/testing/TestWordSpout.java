@@ -58,7 +58,7 @@ public class TestWordSpout extends BaseRichSpout {
         final String[] words = new String[] {"nathan", "mike", "jackson", "golda", "bertels"};
         final Random rand = new Random();
         final String word = words[rand.nextInt(words.length)];
-        _collector.emit(new Values(word));
+        _collector.emit(new Values(word, System.currentTimeMillis() - 3600));
     }
     
     public void ack(Object msgId) {
@@ -70,7 +70,7 @@ public class TestWordSpout extends BaseRichSpout {
     }
     
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
-        declarer.declare(new Fields("word"));
+        declarer.declare(new Fields("word", "ts"));
     }
 
     @Override

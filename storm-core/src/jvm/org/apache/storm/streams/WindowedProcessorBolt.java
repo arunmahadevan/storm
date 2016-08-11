@@ -20,7 +20,7 @@ import java.util.Map;
 
 import static org.apache.storm.streams.WindowNode.PUNCTUATION;
 
-public class WindowedProcessorBolt extends BaseWindowedBolt {
+public class WindowedProcessorBolt extends BaseWindowedBolt implements StreamBolt {
     private static final Logger LOG = LoggerFactory.getLogger(WindowedProcessorBolt.class);
 
     private final ProcessorBoltDelegate delegate;
@@ -83,7 +83,9 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
     @Override
     public void execute(TupleWindow inputWindow) {
         LOG.trace("Window triggered at {}, inputWindow {}", new Date(), inputWindow);
-        // TODO: check anchoring/acking
+        if (delegate.isEventTimestamp()) {
+            delegate.setEventTimestamp(inputWindow.getTimestamp());
+        }
         for (Tuple tuple : inputWindow.get()) {
             Object value = delegate.getValue(tuple);
             if (!StreamUtil.isPunctuation(value)) {
@@ -102,5 +104,10 @@ public class WindowedProcessorBolt extends BaseWindowedBolt {
 
     public void setStreamToInitialProcessors(Multimap<String, ProcessorNode> streamToInitialProcessors) {
         delegate.setStreamToInitialProcessors(streamToInitialProcessors);
+    }
+
+    @Override
+    public void setTimestampField(String fieldName) {
+        delegate.setTimestampField(fieldName);
     }
 }

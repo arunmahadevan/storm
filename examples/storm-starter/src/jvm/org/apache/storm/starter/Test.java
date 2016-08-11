@@ -18,6 +18,7 @@ import org.apache.storm.streams.PairFunction;
 import org.apache.storm.streams.PairStream;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
+import org.apache.storm.streams.windowing.SlidingWindows;
 import org.apache.storm.streams.windowing.TumblingWindows;
 import org.apache.storm.testing.TestWordSpout;
 import org.apache.storm.topology.base.BaseWindowedBolt;
@@ -155,15 +156,14 @@ public class Test {
 
 
         // WINDOW
-        Stream<String> stream = builder.newStream(new TestWordSpout(), 2, new IndexValueMapper<String>(0));
+        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
         stream.mapToPair(new PairFunction<String, String, Long>() {
             @Override
             public Pair<String, Long> apply(String input) {
                 return new Pair<>(input, 1L);
             }
         }).groupByKey()
-                .repartition(3)
-                .window(TumblingWindows.of(Duration.seconds(2)))
+                .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
                 .aggregateByKey(new Count<Long>())
                 .forEach(new Consumer<Pair<String, Long>>() {
                     @Override

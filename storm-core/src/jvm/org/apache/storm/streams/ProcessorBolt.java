@@ -11,7 +11,7 @@ import org.jgrapht.DirectedGraph;
 import java.util.List;
 import java.util.Map;
 
-class ProcessorBolt extends BaseRichBolt {
+class ProcessorBolt extends BaseRichBolt implements StreamBolt {
     private final ProcessorBoltDelegate delegate;
 
     public ProcessorBolt(DirectedGraph<Node, Edge> graph, List<ProcessorNode> nodes) {
@@ -27,6 +27,9 @@ class ProcessorBolt extends BaseRichBolt {
     public void execute(Tuple input) {
         RefCountedTuple refCountedTuple = new RefCountedTuple(input);
         delegate.setAnchor(refCountedTuple);
+        if (delegate.isEventTimestamp()) {
+            delegate.setEventTimestamp(input.getLongByField(delegate.getTimestampField()));
+        }
         delegate.process(delegate.getValue(input), input.getSourceStreamId());
         delegate.ack(refCountedTuple);
     }
@@ -39,5 +42,10 @@ class ProcessorBolt extends BaseRichBolt {
 
     public void setStreamToInitialProcessors(Multimap<String, ProcessorNode> streamToInitialProcessors) {
         delegate.setStreamToInitialProcessors(streamToInitialProcessors);
+    }
+
+    @Override
+    public void setTimestampField(String fieldName) {
+        delegate.setTimestampField(fieldName);
     }
 }

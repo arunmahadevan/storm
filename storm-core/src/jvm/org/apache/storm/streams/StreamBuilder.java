@@ -37,6 +37,8 @@ public class StreamBuilder {
     private final Table<Node, String, GroupingInfo> nodeGroupingInfo = HashBasedTable.create();
     private final Map<Node, WindowNode> windowInfo = new HashMap<>();
     private final List<ProcessorNode> curGroup = new ArrayList<>();
+    private final List<StreamBolt> streamBolts = new ArrayList<>();
+    private String timestampFieldName = null;
 
     public StreamBuilder() {
         graph = new DefaultDirectedGraph<>(new StreamsEdgeFactory());
@@ -59,7 +61,7 @@ public class StreamBuilder {
         return newStream(spout).map(valueMapper);
     }
 
-    public <T> Stream<T> newStream(IRichSpout spout, int parallelism, TupleValueMapper<T> valueMapper) {
+    public <T> Stream<T> newStream(IRichSpout spout, TupleValueMapper<T> valueMapper, int parallelism) {
         return newStream(spout, parallelism).map(valueMapper);
     }
 
@@ -87,7 +89,16 @@ public class StreamBuilder {
             }
         }
         processCurGroup(topologyBuilder);
+        mayBeAddTsField();
         return topologyBuilder.createTopology();
+    }
+
+    private void mayBeAddTsField() {
+        if (timestampFieldName != null) {
+            for (StreamBolt streamBolt : streamBolts) {
+                streamBolt.setTimestampField(timestampFieldName);
+            }
+        }
     }
 
     Node addNode(Stream<?> parent, Node newNode) {
@@ -135,6 +146,13 @@ public class StreamBuilder {
         for (Node parent : parentNodes(windowNode)) {
             windowInfo.put(parent, windowNode);
         }
+        String tsField = windowNode.getWindowParams().getTimestampField();
+        if (tsField != null) {
+            if (timestampFieldName != null && !tsField.equals(timestampFieldName)) {
+                throw new IllegalArgumentException("Cannot set different timestamp field names");
+            }
+            timestampFieldName = tsField;
+        }
     }
 
     private Set<Node> parentNodes(List<? extends Node> nodes) {
@@ -170,14 +188,16 @@ public class StreamBuilder {
         }
         List<ProcessorNode> initialProcessors = initialProcessors(curGroup);
         Set<WindowNode> windowNodes = getWindowNodes(initialProcessors, windowInfo);
+        StreamBolt bolt;
         if (windowNodes.isEmpty()) {
-            addBolt(topologyBuilder, boltId, initialProcessors);
+            bolt = addBolt(topologyBuilder, boltId, initialProcessors);
         } else if (windowNodes.size() == 1) {
             WindowNode windowNode = windowNodes.iterator().next();
-            addWindowedBolt(topologyBuilder, boltId, initialProcessors, windowNode);
+            bolt = addWindowedBolt(topologyBuilder, boltId, initialProcessors, windowNode);
         } else {
             throw new IllegalStateException("More than one window config for current group " + curGroup);
         }
+        streamBolts.add(bolt);
         curGroup.clear();
     }
 
@@ -228,21 +248,23 @@ public class StreamBuilder {
         }
     }
 
-    private void addWindowedBolt(TopologyBuilder topologyBuilder,
+    private StreamBolt addWindowedBolt(TopologyBuilder topologyBuilder,
                                  String boltId,
                                  List<ProcessorNode> initialProcessors,
                                  WindowNode windowNode) {
         WindowedProcessorBolt bolt = new WindowedProcessorBolt(graph, curGroup, windowNode);
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
         bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
+        return bolt;
     }
 
-    private void addBolt(TopologyBuilder topologyBuilder,
+    private StreamBolt addBolt(TopologyBuilder topologyBuilder,
                          String boltId,
                          List<ProcessorNode> initialProcessors) {
         ProcessorBolt bolt = new ProcessorBolt(graph, curGroup);
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
         bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
+        return bolt;
     }
 
     private Set<String> getWindowedParentStreams(ProcessorNode processorNode) {

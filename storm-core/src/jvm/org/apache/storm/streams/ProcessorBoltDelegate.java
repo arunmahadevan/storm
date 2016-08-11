@@ -5,6 +5,7 @@ import com.google.common.collect.Multimap;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
+import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.jgrapht.DirectedGraph;
 import org.jgrapht.graph.DirectedSubgraph;
@@ -34,6 +35,7 @@ class ProcessorBoltDelegate implements Serializable {
     Map<ProcessorNode, Set<String>> punctuationState = new HashMap<>();
 
     private Multimap<String, ProcessorNode> streamToInitialProcessors;
+    private String timestampField;
 
     ProcessorBoltDelegate(DirectedGraph<Node, Edge> graph, List<ProcessorNode> nodes) {
         this.graph = graph;
@@ -71,6 +73,11 @@ class ProcessorBoltDelegate implements Serializable {
                 }
             }
             processorNode.initProcessorContext(processorContext);
+        }
+        if (timestampField != null) {
+            for (EmittingProcessorContext ctx : emittingProcessorContexts) {
+                ctx.setTimestampField(timestampField);
+            }
         }
     }
 
@@ -114,7 +121,14 @@ class ProcessorBoltDelegate implements Serializable {
     void declareOutputFields(OutputFieldsDeclarer declarer) {
         for (ProcessorNode node : nodes) {
             for (String stream : node.getOutputStreams()) {
-                declarer.declareStream(stream, node.getOutputFields());
+                if (timestampField == null) {
+                    declarer.declareStream(stream, node.getOutputFields());
+                } else {
+                    List<String> fields = new ArrayList<>();
+                    fields.addAll(node.getOutputFields().toList());
+                    fields.add(timestampField);
+                    declarer.declareStream(stream, new Fields(fields));
+                }
             }
         }
     }
@@ -127,12 +141,11 @@ class ProcessorBoltDelegate implements Serializable {
 
     Object getValue(Tuple input) {
         Object value;
-        //TODO: find a better way
         // if tuple arrives from a spout, it can be passed as is
         // otherwise the value is in the first field of the tuple
         if (input.getSourceComponent().startsWith("spout")) {
             value = input;
-        } else if (input.size() == 2) {
+        } else if (isPair(input)) {
             value = new Pair<>(input.getValue(0), input.getValue(1));
         } else {
             value = input.getValue(0);
@@ -172,6 +185,24 @@ class ProcessorBoltDelegate implements Serializable {
         return streamToInitialProcessors.keySet();
     }
 
+    void setTimestampField(String fieldName) {
+        this.timestampField = fieldName;
+    }
+
+    String getTimestampField() {
+        return timestampField;
+    }
+
+    boolean isEventTimestamp() {
+        return timestampField != null;
+    }
+
+    void setEventTimestamp(long timestamp) {
+        for (EmittingProcessorContext ctx : emittingProcessorContexts) {
+            ctx.setEventTimestamp(timestamp);
+        }
+    }
+
     // if we received punctuation from all parent windowed streams
     private boolean shouldPunctuate(ProcessorNode processorNode, String sourceStreamId) {
         if (processorNode.getWindowedParentStreams().size() <= 1) {
@@ -191,6 +222,10 @@ class ProcessorBoltDelegate implements Serializable {
         if ((state = punctuationState.get(processorNode)) != null) {
             state.clear();
         }
+    }
+
+    private boolean isPair(Tuple input) {
+        return timestampField == null ? input.size() == 2 : input.size() == 3;
     }
 
 }

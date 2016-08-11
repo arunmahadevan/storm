@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
@@ -26,6 +27,8 @@ class EmittingProcessorContext implements ProcessorContext {
     private final Values punctuation;
     private final List<RefCountedTuple> anchors = new ArrayList<>();
     private boolean emitPunctuation = true;
+    private long eventTimestamp = 0L;
+    private String timestampField;
 
     EmittingProcessorContext(ProcessorNode processorNode, OutputCollector collector, String outputStreamId) {
         this.processorNode = processorNode;
@@ -86,6 +89,9 @@ class EmittingProcessorContext implements ProcessorContext {
     }
 
     private void emit(Values values) {
+        if (timestampField != null) {
+            values.add(eventTimestamp);
+        }
         if (!anchors.isEmpty()) {
             LOG.debug("Emit, outputStreamId: {}, anchors: {}, values: {}", outputStreamId, anchors, values);
             collector.emit(outputStreamId, tuples(anchors), values);
@@ -94,6 +100,14 @@ class EmittingProcessorContext implements ProcessorContext {
             LOG.debug("Emit un-anchored, outputStreamId: {}, values: {}", outputStreamId, values);
             collector.emit(outputStreamId, values);
         }
+    }
+
+    void setTimestampField(String fieldName) {
+        this.timestampField = fieldName;
+    }
+
+    void setEventTimestamp(long timestamp) {
+        this.eventTimestamp = timestamp;
     }
 
     void setAnchor(RefCountedTuple anchor) {

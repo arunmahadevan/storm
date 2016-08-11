@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -28,11 +28,18 @@ public class TupleWindowImpl implements TupleWindow {
     private final List<Tuple> tuples;
     private final List<Tuple> newTuples;
     private final List<Tuple> expiredTuples;
+    // TODO: windowmanager to pass this
+    private final Long timestamp;
 
     public TupleWindowImpl(List<Tuple> tuples, List<Tuple> newTuples, List<Tuple> expiredTuples) {
+        this(tuples, newTuples, expiredTuples, null);
+    }
+
+    public TupleWindowImpl(List<Tuple> tuples, List<Tuple> newTuples, List<Tuple> expiredTuples, Long timestamp) {
         this.tuples = tuples;
         this.newTuples = newTuples;
         this.expiredTuples = expiredTuples;
+        this.timestamp = timestamp;
     }
 
     @Override
@@ -48,6 +55,11 @@ public class TupleWindowImpl implements TupleWindow {
     @Override
     public List<Tuple> getExpired() {
         return expiredTuples;
+    }
+
+    @Override
+    public Long getTimestamp() {
+        return timestamp != null ? timestamp : System.currentTimeMillis();
     }
 
     @Override
