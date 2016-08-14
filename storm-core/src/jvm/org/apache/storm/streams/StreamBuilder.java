@@ -8,6 +8,7 @@ import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Table;
 import org.apache.storm.generated.StormTopology;
+import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.topology.BoltDeclarer;
 import org.apache.storm.topology.IBasicBolt;
 import org.apache.storm.topology.IComponent;
@@ -155,14 +156,6 @@ public class StreamBuilder {
         }
     }
 
-    private Set<Node> parentNodes(List<? extends Node> nodes) {
-        Set<Node> parents = new HashSet<>();
-        for (Node node : nodes) {
-            parents.addAll(parentNodes(node));
-        }
-        return parents;
-    }
-
     private Set<Node> parentNodes(Node curNode) {
         Set<Node> nodes = new HashSet<>();
         for (Node parent : StreamUtil.<Node>getParents(graph, curNode)) {
@@ -186,14 +179,13 @@ public class StreamBuilder {
             processorNode.setWindowed(isWindowed(processorNode));
             processorNode.setWindowedParentStreams(getWindowedParentStreams(processorNode));
         }
-        List<ProcessorNode> initialProcessors = initialProcessors(curGroup);
-        Set<WindowNode> windowNodes = getWindowNodes(initialProcessors, windowInfo);
+        final Set<ProcessorNode> initialProcessors = initialProcessors(curGroup);
+        Set<Window<?, ?>> windowParams = getWindowParams(initialProcessors);
         StreamBolt bolt;
-        if (windowNodes.isEmpty()) {
+        if (windowParams.isEmpty()) {
             bolt = addBolt(topologyBuilder, boltId, initialProcessors);
-        } else if (windowNodes.size() == 1) {
-            WindowNode windowNode = windowNodes.iterator().next();
-            bolt = addWindowedBolt(topologyBuilder, boltId, initialProcessors, windowNode);
+        } else if (windowParams.size() == 1) {
+            bolt = addWindowedBolt(topologyBuilder, boltId, initialProcessors, windowParams.iterator().next());
         } else {
             throw new IllegalStateException("More than one window config for current group " + curGroup);
         }
@@ -216,15 +208,33 @@ public class StreamBuilder {
         return parallelisms.isEmpty() ? 1 : parallelisms.iterator().next();
     }
 
-    private Set<WindowNode> getWindowNodes(List<ProcessorNode> initialProcessors,
-                                           Map<Node, WindowNode> windowInfo) {
-        Set<WindowNode> res = new HashSet<>();
-        for (Node node : parentNodes(initialProcessors)) {
-            if (windowInfo.containsKey(node)) {
-                res.add(windowInfo.get(node));
+    private Set<Window<?, ?>> getWindowParams(Set<ProcessorNode> initialProcessors) {
+        Set<WindowNode> windowNodes = new HashSet<>();
+        Set<Node> parents;
+        for (ProcessorNode processorNode : initialProcessors) {
+            if (processorNode.getProcessor() instanceof JoinProcessor) {
+                String leftStream = ((JoinProcessor) processorNode.getProcessor()).getLeftStream();
+                parents = processorNode.getParents(leftStream);
+            } else {
+                parents = parentNodes(processorNode);
+            }
+            for (Node node : parents) {
+                if (windowInfo.containsKey(node)) {
+                    windowNodes.add(windowInfo.get(node));
+                }
             }
         }
-        return res;
+
+        Set<Window<?, ?>> windowParams = new HashSet<>();
+        if (!windowNodes.isEmpty()) {
+            windowParams.addAll(new HashSet<>(Collections2.transform(windowNodes, new Function<WindowNode, Window<?, ?>>() {
+                @Override
+                public Window<?, ?> apply(WindowNode input) {
+                    return input.getWindowParams();
+                }
+            })));
+        }
+        return windowParams;
     }
 
     private void addSpout(TopologyBuilder topologyBuilder, SpoutNode spout) {
@@ -249,18 +259,18 @@ public class StreamBuilder {
     }
 
     private StreamBolt addWindowedBolt(TopologyBuilder topologyBuilder,
-                                 String boltId,
-                                 List<ProcessorNode> initialProcessors,
-                                 WindowNode windowNode) {
-        WindowedProcessorBolt bolt = new WindowedProcessorBolt(graph, curGroup, windowNode);
+                                       String boltId,
+                                       Set<ProcessorNode> initialProcessors,
+                                       Window<?, ?> windowParam) {
+        WindowedProcessorBolt bolt = new WindowedProcessorBolt(graph, curGroup, windowParam);
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
         bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
         return bolt;
     }
 
     private StreamBolt addBolt(TopologyBuilder topologyBuilder,
-                         String boltId,
-                         List<ProcessorNode> initialProcessors) {
+                               String boltId,
+                               Set<ProcessorNode> initialProcessors) {
         ProcessorBolt bolt = new ProcessorBolt(graph, curGroup);
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
         bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
@@ -286,7 +296,7 @@ public class StreamBuilder {
     }
 
     private Multimap<String, ProcessorNode> wireBolt(BoltDeclarer boltDeclarer,
-                                                     List<ProcessorNode> initialProcessors) {
+                                                     Set<ProcessorNode> initialProcessors) {
         LOG.debug("Wiring bolt with boltDeclarer {}, curGroup {}, initialProcessors {}, nodeGroupingInfo {}",
                 boltDeclarer, curGroup, initialProcessors, nodeGroupingInfo);
         Multimap<String, ProcessorNode> streamToInitialProcessor = ArrayListMultimap.create();
@@ -318,8 +328,8 @@ public class StreamBuilder {
         }
     }
 
-    private List<ProcessorNode> initialProcessors(List<ProcessorNode> curGroup) {
-        List<ProcessorNode> nodes = new ArrayList<>();
+    private Set<ProcessorNode> initialProcessors(List<ProcessorNode> curGroup) {
+        Set<ProcessorNode> nodes = new HashSet<>();
         Set<ProcessorNode> curSet = new HashSet<>(curGroup);
         for (ProcessorNode node : curGroup) {
             for (Node parent : parentNodes(node)) {

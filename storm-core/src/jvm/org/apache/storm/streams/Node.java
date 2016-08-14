@@ -2,6 +2,7 @@ package org.apache.storm.streams;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
 import org.apache.storm.generated.StreamInfo;
 import org.apache.storm.topology.IComponent;
 import org.apache.storm.topology.OutputFieldsGetter;
@@ -82,6 +83,11 @@ abstract class Node implements Serializable {
 
     Collection<String> getParentStreams(Node parent) {
         return parentStreams.get(parent);
+    }
+
+    Set<Node> getParents(String stream) {
+        Multimap<String, Node> rev = Multimaps.invertFrom(parentStreams, ArrayListMultimap.<String, Node>create());
+        return new HashSet<>(rev.get(stream));
     }
 
     String addOutputStream(String streamId) {

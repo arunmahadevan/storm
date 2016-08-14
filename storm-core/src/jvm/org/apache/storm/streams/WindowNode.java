@@ -18,4 +18,5 @@ class WindowNode extends Node {
     public Window<?, ?> getWindowParams() {
         return windowParams;
     }
+
 }

@@ -24,17 +24,18 @@ public class WindowedProcessorBolt extends BaseWindowedBolt implements StreamBol
     private static final Logger LOG = LoggerFactory.getLogger(WindowedProcessorBolt.class);
 
     private final ProcessorBoltDelegate delegate;
-    private final WindowNode windowNode;
+    private final Window<?, ?> window;
 
 
-    public WindowedProcessorBolt(DefaultDirectedGraph<Node, Edge> graph, List<ProcessorNode> nodes, WindowNode windowNode) {
+    public WindowedProcessorBolt(DefaultDirectedGraph<Node, Edge> graph,
+                                 List<ProcessorNode> nodes,
+                                 Window<?, ?> window) {
         delegate = new ProcessorBoltDelegate(graph, nodes);
-        this.windowNode = windowNode;
-        setWindowParams();
+        this.window = window;
+        setWindowConfig();
     }
 
-    private void setWindowParams() {
-        Window<?, ?> window = windowNode.getWindowParams();
+    private void setWindowConfig() {
         if (window instanceof SlidingWindows) {
             setSlidingWindowParams(window.getWindowLength(), window.getSlidingInterval());
         } else if (window instanceof TumblingWindows) {

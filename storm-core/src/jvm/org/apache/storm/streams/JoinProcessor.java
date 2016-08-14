@@ -102,4 +102,12 @@ class JoinProcessor<K, R, V1, V2> extends BaseProcessor<Pair<K, ?>> implements B
             return third;
         }
     }
+
+    public String getLeftStream() {
+        return leftStream;
+    }
+
+    public String getRightStream() {
+        return rightStream;
+    }
 }

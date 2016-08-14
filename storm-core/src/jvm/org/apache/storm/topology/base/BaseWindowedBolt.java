@@ -56,6 +56,22 @@ public abstract class BaseWindowedBolt implements IWindowedBolt {
         }
 
         @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Count count = (Count) o;
+
+            return value == count.value;
+
+        }
+
+        @Override
+        public int hashCode() {
+            return value;
+        }
+
+        @Override
         public String toString() {
             return "Count{" +
                     "value=" + value +
@@ -121,6 +137,22 @@ public abstract class BaseWindowedBolt implements IWindowedBolt {
          */
         public static Duration seconds(int seconds) {
             return new Duration(seconds, TimeUnit.SECONDS);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Duration duration = (Duration) o;
+
+            return value == duration.value;
+
+        }
+
+        @Override
+        public int hashCode() {
+            return value;
         }
 
         @Override

@@ -21,4 +21,27 @@ public abstract class BaseWindow<L, T> implements Window<L, T> {
     public Duration getLag() {
         return lag;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        BaseWindow<?, ?> that = (BaseWindow<?, ?>) o;
+
+        if (timestampField != null ? !timestampField.equals(that.timestampField) : that.timestampField != null)
+            return false;
+        if (lateTupleStream != null ? !lateTupleStream.equals(that.lateTupleStream) : that.lateTupleStream != null)
+            return false;
+        return lag != null ? lag.equals(that.lag) : that.lag == null;
+
+    }
+
+    @Override
+    public int hashCode() {
+        int result = timestampField != null ? timestampField.hashCode() : 0;
+        result = 31 * result + (lateTupleStream != null ? lateTupleStream.hashCode() : 0);
+        result = 31 * result + (lag != null ? lag.hashCode() : 0);
+        return result;
+    }
 }

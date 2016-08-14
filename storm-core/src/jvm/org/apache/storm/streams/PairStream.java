@@ -36,7 +36,7 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
     /**
      * Join this values of this stream with the values having the same key from the other stream.
      * <p>
-     * Note: The parallelism of this stream is carried forward to the joined stream.
+     * Note: The parallelism and windowing parameters (if windowed) of this stream is carried forward to the joined stream.
      * </p>
      *
      * @param otherStream the other stream
@@ -50,7 +50,7 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
     /**
      * Join this values of this stream with the values having the same key from the other stream.
      * <p>
-     * Note: The parallelism of this stream is carried forward to the joined stream.
+     * Note: The parallelism and windowing parameters (if windowed) of this stream is carried forward to the joined stream.
      * </p>
      *
      * @param otherStream the other stream

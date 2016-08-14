@@ -110,4 +110,25 @@ public class SlidingWindows<L, I> extends BaseWindow<L, I> {
         lag = duration;
         return this;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        if (!super.equals(o)) return false;
+
+        SlidingWindows<?, ?> that = (SlidingWindows<?, ?>) o;
+
+        if (windowLength != null ? !windowLength.equals(that.windowLength) : that.windowLength != null) return false;
+        return slidingInterval != null ? slidingInterval.equals(that.slidingInterval) : that.slidingInterval == null;
+
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + (windowLength != null ? windowLength.hashCode() : 0);
+        result = 31 * result + (slidingInterval != null ? slidingInterval.hashCode() : 0);
+        return result;
+    }
 }

@@ -156,6 +156,16 @@ public class Test {
 
 
         // WINDOW
+        PairStream<String, Long> stream2 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+                .mapToPair(new PairFunction<String, String, Long>() {
+            @Override
+            public Pair<String, Long> apply(String input) {
+                return new Pair<>(input, 1L);
+            }
+        }).groupByKey()
+        .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(4)))
+                .aggregateByKey(new Count<Long>()).groupByKey();
+
         Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
         stream.mapToPair(new PairFunction<String, String, Long>() {
             @Override
@@ -163,14 +173,9 @@ public class Test {
                 return new Pair<>(input, 1L);
             }
         }).groupByKey()
-                .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
-                .aggregateByKey(new Count<Long>())
-                .forEach(new Consumer<Pair<String, Long>>() {
-                    @Override
-                    public void accept(Pair<String, Long> input) {
-                        System.out.println(new Date() + ": " + input);
-                    }
-                });
+//                .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
+                .join(stream2)
+                .print();
         //END WINDOW
 
 

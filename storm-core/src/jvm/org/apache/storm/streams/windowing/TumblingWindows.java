@@ -81,4 +81,22 @@ public class TumblingWindows<L> extends BaseWindow<L, L> {
         return this;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        if (!super.equals(o)) return false;
+
+        TumblingWindows<?> that = (TumblingWindows<?>) o;
+
+        return windowLength != null ? windowLength.equals(that.windowLength) : that.windowLength == null;
+
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + (windowLength != null ? windowLength.hashCode() : 0);
+        return result;
+    }
 }
