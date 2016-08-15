@@ -8,6 +8,8 @@ import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Table;
 import org.apache.storm.generated.StormTopology;
+import org.apache.storm.streams.operations.TupleValueMapper;
+import org.apache.storm.streams.processors.JoinProcessor;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.topology.BoltDeclarer;
 import org.apache.storm.topology.IBasicBolt;

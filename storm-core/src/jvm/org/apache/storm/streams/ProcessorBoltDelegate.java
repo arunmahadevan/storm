@@ -2,6 +2,11 @@ package org.apache.storm.streams;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
+import org.apache.storm.streams.processors.ChainedProcessorContext;
+import org.apache.storm.streams.processors.EmittingProcessorContext;
+import org.apache.storm.streams.processors.ForwardingProcessorContext;
+import org.apache.storm.streams.processors.Processor;
+import org.apache.storm.streams.processors.ProcessorContext;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;

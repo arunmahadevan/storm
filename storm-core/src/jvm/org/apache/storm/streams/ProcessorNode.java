@@ -1,10 +1,13 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.streams.processors.BatchProcessor;
+import org.apache.storm.streams.processors.Processor;
+import org.apache.storm.streams.processors.ProcessorContext;
 import org.apache.storm.tuple.Fields;
 
 import java.util.Set;
 
-class ProcessorNode extends Node {
+public class ProcessorNode extends Node {
     private final Processor<?> processor;
     private final boolean isBatch;
     private boolean windowed = false;
@@ -38,7 +41,7 @@ class ProcessorNode extends Node {
         this.windowed = windowed;
     }
 
-    Set<String> getWindowedParentStreams() {
+    public Set<String> getWindowedParentStreams() {
         return windowedParentStreams;
     }
 

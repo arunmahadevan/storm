@@ -1,5 +1,15 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.streams.operations.Aggregator;
+import org.apache.storm.streams.operations.Consumer;
+import org.apache.storm.streams.operations.Function;
+import org.apache.storm.streams.operations.PairValueJoiner;
+import org.apache.storm.streams.operations.Reducer;
+import org.apache.storm.streams.operations.ValueJoiner;
+import org.apache.storm.streams.processors.AggregateByKeyProcessor;
+import org.apache.storm.streams.processors.JoinProcessor;
+import org.apache.storm.streams.processors.MapValuesProcessor;
+import org.apache.storm.streams.processors.ReduceByKeyProcessor;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 

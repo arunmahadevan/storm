@@ -1,5 +1,22 @@
 package org.apache.storm.streams;
 
+import org.apache.storm.streams.operations.Aggregator;
+import org.apache.storm.streams.operations.Consumer;
+import org.apache.storm.streams.operations.FlatMapFunction;
+import org.apache.storm.streams.operations.Function;
+import org.apache.storm.streams.operations.PairFlatMapFunction;
+import org.apache.storm.streams.operations.PairFunction;
+import org.apache.storm.streams.operations.Predicate;
+import org.apache.storm.streams.operations.PrintConsumer;
+import org.apache.storm.streams.operations.Reducer;
+import org.apache.storm.streams.processors.AggregateProcessor;
+import org.apache.storm.streams.processors.FilterProcessor;
+import org.apache.storm.streams.processors.FlatMapProcessor;
+import org.apache.storm.streams.processors.ForEachProcessor;
+import org.apache.storm.streams.processors.MapProcessor;
+import org.apache.storm.streams.processors.PeekProcessor;
+import org.apache.storm.streams.processors.Processor;
+import org.apache.storm.streams.processors.ReduceProcessor;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.topology.IBasicBolt;
 import org.apache.storm.topology.IRichBolt;

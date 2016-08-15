@@ -5,8 +5,8 @@ import org.jgrapht.DirectedGraph;
 import java.util.ArrayList;
 import java.util.List;
 
-class StreamUtil {
-    static <T> List<T> getParents(DirectedGraph<Node, Edge> graph, Node node) {
+public class StreamUtil {
+    public static <T> List<T> getParents(DirectedGraph<Node, Edge> graph, Node node) {
         List<Edge> incoming = new ArrayList<>(graph.incomingEdgesOf(node));
         List<T> ret = new ArrayList<>();
         for (Edge e : incoming) {
@@ -15,7 +15,7 @@ class StreamUtil {
         return ret;
     }
 
-    static <T> List<T> getChildren(DirectedGraph<Node, Edge> graph, Node node) {
+    public static <T> List<T> getChildren(DirectedGraph<Node, Edge> graph, Node node) {
         List<Edge> outgoing = new ArrayList<>(graph.outgoingEdgesOf(node));
         List<T> ret = new ArrayList<>();
         for (Edge e : outgoing) {
@@ -25,15 +25,15 @@ class StreamUtil {
     }
 
 
-    static boolean isSinkStream(String streamId) {
+    public static boolean isSinkStream(String streamId) {
         return streamId.endsWith("__sink");
     }
 
-    static String getSinkStream(String streamId) {
+    public static String getSinkStream(String streamId) {
         return streamId + "__sink";
     }
 
-    static boolean isPunctuation(Object value) {
+    public static boolean isPunctuation(Object value) {
         if (value instanceof Pair) {
             value = ((Pair) value).getFirst();
         }

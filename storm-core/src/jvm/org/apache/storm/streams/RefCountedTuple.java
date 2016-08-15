@@ -2,23 +2,23 @@ package org.apache.storm.streams;
 
 import org.apache.storm.tuple.Tuple;
 
-class RefCountedTuple {
+public class RefCountedTuple {
     private int count = 0;
     private final Tuple tuple;
 
-    RefCountedTuple(Tuple tuple) {
+    public RefCountedTuple(Tuple tuple) {
         this.tuple = tuple;
     }
 
-    boolean shouldAck() {
+    public boolean shouldAck() {
         return count == 0;
     }
 
-    void increment() {
+    public void increment() {
         ++count;
     }
 
-    void decrement() {
+    public void decrement() {
         --count;
     }
 

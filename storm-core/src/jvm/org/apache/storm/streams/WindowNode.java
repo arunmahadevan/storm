@@ -5,7 +5,7 @@ import org.apache.storm.tuple.Fields;
 
 import java.io.Serializable;
 
-class WindowNode extends Node {
+public class WindowNode extends Node {
     private final Window<?, ?> windowParams;
 
     public static final String PUNCTUATION = "__punctuation";

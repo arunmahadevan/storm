@@ -3,32 +3,20 @@ package org.apache.storm.starter;
 
 import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
-import org.apache.storm.redis.bolt.RedisStoreBolt;
-import org.apache.storm.redis.common.config.JedisPoolConfig;
 import org.apache.storm.redis.common.mapper.RedisDataTypeDescription;
 import org.apache.storm.redis.common.mapper.RedisStoreMapper;
-import org.apache.storm.streams.Aggregator;
-import org.apache.storm.streams.Consumer;
-import org.apache.storm.streams.Count;
-import org.apache.storm.streams.FlatMapFunction;
-import org.apache.storm.streams.Function;
-import org.apache.storm.streams.IndexValueMapper;
+import org.apache.storm.streams.operations.Count;
+import org.apache.storm.streams.operations.IndexValueMapper;
 import org.apache.storm.streams.Pair;
-import org.apache.storm.streams.PairFunction;
+import org.apache.storm.streams.operations.PairFunction;
 import org.apache.storm.streams.PairStream;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
 import org.apache.storm.streams.windowing.SlidingWindows;
-import org.apache.storm.streams.windowing.TumblingWindows;
 import org.apache.storm.testing.TestWordSpout;
 import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
-
-import java.util.Arrays;
-import java.util.Date;
-
-import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
 
 public class Test {
     public static void main(String[] args) {
