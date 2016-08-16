@@ -2,11 +2,13 @@ package org.apache.storm.streams;
 
 import org.apache.storm.streams.operations.Aggregator;
 import org.apache.storm.streams.operations.Consumer;
+import org.apache.storm.streams.operations.FlatMapFunction;
 import org.apache.storm.streams.operations.Function;
 import org.apache.storm.streams.operations.PairValueJoiner;
 import org.apache.storm.streams.operations.Reducer;
 import org.apache.storm.streams.operations.ValueJoiner;
 import org.apache.storm.streams.processors.AggregateByKeyProcessor;
+import org.apache.storm.streams.processors.FlatMapValuesProcessor;
 import org.apache.storm.streams.processors.JoinProcessor;
 import org.apache.storm.streams.processors.MapValuesProcessor;
 import org.apache.storm.streams.processors.ReduceByKeyProcessor;
@@ -15,36 +17,78 @@ import org.apache.storm.tuple.Fields;
 
 public class PairStream<K, V> extends Stream<Pair<K, V>> {
 
-    public PairStream(StreamBuilder topology, Node node) {
+    PairStream(StreamBuilder topology, Node node) {
         super(topology, node);
     }
 
+    /**
+     * Returns a new stream by applying a {@link Function} to the value of each key-value pairs in
+     * this stream.
+     *
+     * @param function the mapping function
+     * @param <R>      the result type
+     * @return the new stream
+     */
     public <R> PairStream<K, R> mapValues(Function<V, R> function) {
-        Node mapValues = streamBuilder.addNode(this, makeProcessorNode(new MapValuesProcessor<>(function), new Fields("key", "value")));
+        Node mapValues = streamBuilder.addNode(this, makeProcessorNode(new MapValuesProcessor<>(function), KEY_VALUE));
         return new PairStream<>(streamBuilder, mapValues);
     }
 
+    /**
+     * Return a new stream by applying a {@link FlatMapFunction} function to the value of each key-value pairs in
+     * this stream.
+     *
+     * @param function the flatmap function
+     * @param <R>      the result type
+     * @return the new stream
+     */
+    public <R> PairStream<K, R> flatMapValues(FlatMapFunction<V, R> function) {
+        Node flatMapValues = streamBuilder.addNode(this, makeProcessorNode(new FlatMapValuesProcessor<>(function), KEY_VALUE));
+        return new PairStream<>(streamBuilder, flatMapValues);
+    }
+
+    /**
+     * Aggregates the values for each key of this stream using the given {@link Aggregator}.
+     *
+     * @param aggregator the aggregator
+     * @param <R>        the result type
+     * @return the new stream
+     */
     public <R> PairStream<K, R> aggregateByKey(Aggregator<V, R> aggregator) {
-        Node agg = streamBuilder.addNode(this, makeProcessorNode(new AggregateByKeyProcessor<>(aggregator), new Fields("key", "value")));
+        Node agg = streamBuilder.addNode(this, makeProcessorNode(new AggregateByKeyProcessor<>(aggregator), KEY_VALUE));
         return new PairStream<>(streamBuilder, agg);
     }
 
+    /**
+     * Performs a reduction on the values for each key of this stream by repeatedly applying the reducer.
+     *
+     * @param reducer the reducer
+     * @return the new stream
+     */
     public PairStream<K, V> reduceByKey(Reducer<V> reducer) {
-        Node reduce = streamBuilder.addNode(this, makeProcessorNode(new ReduceByKeyProcessor<>(reducer), new Fields("key", "value")));
+        Node reduce = streamBuilder.addNode(this, makeProcessorNode(new ReduceByKeyProcessor<>(reducer), KEY_VALUE));
         return new PairStream<>(streamBuilder, reduce);
     }
 
+    /**
+     * Returns a new stream where the values are grouped by the keys.
+     *
+     * @return the new stream
+     */
     public PairStream<K, V> groupByKey() {
-        return partitionBy(new Fields("key"));
+        return partitionBy(KEY);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PairStream<K, V> peek(Consumer<Pair<K, V>> action) {
         return toPairStream(super.peek(action));
     }
 
     /**
-     * Join this values of this stream with the values having the same key from the other stream.
+     * Join the values of this stream with the values having the same key from the other stream.
      * <p>
      * Note: The parallelism and windowing parameters (if windowed) of this stream is carried forward to the joined stream.
      * </p>
@@ -58,7 +102,7 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
     }
 
     /**
-     * Join this values of this stream with the values having the same key from the other stream.
+     * Join the values of this stream with the values having the same key from the other stream.
      * <p>
      * Note: The parallelism and windowing parameters (if windowed) of this stream is carried forward to the joined stream.
      * </p>
@@ -72,7 +116,7 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
     public <R, V1> PairStream<K, R> join(PairStream<K, V1> otherStream, ValueJoiner<V, V1, R> valueJoiner) {
         String leftStream = stream;
         String rightStream = otherStream.stream;
-        Node joinNode = addProcessorNode(new JoinProcessor<>(leftStream, rightStream, valueJoiner), new Fields("key", "value"));
+        Node joinNode = addProcessorNode(new JoinProcessor<>(leftStream, rightStream, valueJoiner), KEY_VALUE);
         streamBuilder.addNode(otherStream, joinNode, joinNode.parallelism);
         return new PairStream<>(streamBuilder, joinNode);
     }
@@ -85,6 +129,9 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
         return toPairStream(super.window(window));
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public PairStream<K, V> repartition(int parallelism) {
         return toPairStream(super.repartition(parallelism));

@@ -22,10 +22,10 @@ import org.apache.storm.topology.IBasicBolt;
 import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.tuple.Fields;
 
-// TODO: for event time transparently handle "ts" field
 public class Stream<T> {
-    public static final String FIELD_KEY = "key";
-    public static final String FIELD_VALUE = "value";
+    protected static final Fields KEY = new Fields("value");
+    protected static final Fields VALUE = new Fields("value");
+    protected static final Fields KEY_VALUE = new Fields("key", "value");
 
     // the stream builder
     protected final StreamBuilder streamBuilder;
@@ -65,7 +65,7 @@ public class Stream<T> {
     public <R> Stream<R> map(Function<T, R> function) {
         return new Stream<>(
                 streamBuilder,
-                addProcessorNode(new MapProcessor<>(function), new Fields(FIELD_VALUE)));
+                addProcessorNode(new MapProcessor<>(function), VALUE));
     }
 
     /**
@@ -78,7 +78,7 @@ public class Stream<T> {
      */
     public <K, V> PairStream<K, V> mapToPair(PairFunction<T, K, V> function) {
         return new PairStream<>(streamBuilder,
-                addProcessorNode(new MapProcessor<>(function), new Fields(FIELD_KEY, FIELD_VALUE)));
+                addProcessorNode(new MapProcessor<>(function), KEY_VALUE));
     }
 
     /**
@@ -92,7 +92,7 @@ public class Stream<T> {
     public <R> Stream<R> flatMap(FlatMapFunction<T, R> function) {
         return new Stream<>(
                 streamBuilder,
-                addProcessorNode(new FlatMapProcessor<>(function), new Fields(FIELD_VALUE)));
+                addProcessorNode(new FlatMapProcessor<>(function), VALUE));
     }
 
     /**
@@ -108,7 +108,7 @@ public class Stream<T> {
      */
     public <K, V> PairStream<K, V> flatMapToPair(PairFlatMapFunction<T, K, V> function) {
         return new PairStream<>(streamBuilder,
-                addProcessorNode(new FlatMapProcessor<>(function), new Fields(FIELD_KEY, FIELD_VALUE)));
+                addProcessorNode(new FlatMapProcessor<>(function), KEY_VALUE));
     }
 
     /**
@@ -174,7 +174,7 @@ public class Stream<T> {
     public <R> Stream<R> aggregate(Aggregator<T, R> aggregator) {
         return new Stream<>(
                 streamBuilder,
-                global().addProcessorNode(new AggregateProcessor<>(aggregator), new Fields(FIELD_VALUE)));
+                global().addProcessorNode(new AggregateProcessor<>(aggregator), VALUE));
     }
 
     /**
@@ -191,7 +191,7 @@ public class Stream<T> {
     public Stream<T> reduce(Reducer<T> reducer) {
         return new Stream<>(
                 streamBuilder,
-                global().addProcessorNode(new ReduceProcessor<>(reducer), new Fields(FIELD_VALUE)));
+                global().addProcessorNode(new ReduceProcessor<>(reducer), VALUE));
     }
 
     /**
@@ -213,18 +213,56 @@ public class Stream<T> {
         forEach(new PrintConsumer<T>());
     }
 
+    /**
+     * Sends the elements of this stream to a bolt. This could be used to plug in existing bolts as
+     * sinks in the stream, for e.g. a {@code RedisStoreBolt}. The bolt would have a parallelism of 1.
+     * <p>
+     * <b>Note:</b> This would provide guarantees only based on what the bolt provides.
+     * </p>
+     *
+     * @param bolt the bolt
+     */
     public void to(IRichBolt bolt) {
         to(bolt, 1);
     }
 
+    /**
+     * Sends the elements of this stream to a bolt. This could be used to plug in existing bolts as
+     * sinks in the stream, for e.g. a {@code RedisStoreBolt}.
+     * <p>
+     * <b>Note:</b> This would provide guarantees only based on what the bolt provides.
+     * </p>
+     *
+     * @param bolt        the bolt
+     * @param parallelism the parallelism of the bolt
+     */
     public void to(IRichBolt bolt, int parallelism) {
         addSinkNode(new SinkNode(bolt), parallelism);
     }
 
+    /**
+     * Sends the elements of this stream to a bolt. This could be used to plug in existing bolts as
+     * sinks in the stream, for e.g. a {@code RedisStoreBolt}. The bolt would have a parallelism of 1.
+     * <p>
+     * <b>Note:</b> This would provide guarantees only based on what the bolt provides.
+     * </p>
+     *
+     * @param bolt the bolt
+     */
     public void to(IBasicBolt bolt) {
         to(bolt, 1);
     }
 
+    /**
+     * Sends the elements of this stream to a bolt. This could be used to plug in existing bolts as
+     * sinks in the stream, for e.g. a {@code RedisStoreBolt}.
+     * <p>
+     * <b>Note:</b> This would provide guarantees only based on what the bolt provides.
+     * </p>
+     *
+     * @param bolt        the bolt
+     * @param parallelism the parallelism of the bolt
+     */
     public void to(IBasicBolt bolt, int parallelism) {
         addSinkNode(new SinkNode(bolt), parallelism);
     }

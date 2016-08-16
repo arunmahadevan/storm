@@ -5,7 +5,10 @@ import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
 import org.apache.storm.redis.common.mapper.RedisDataTypeDescription;
 import org.apache.storm.redis.common.mapper.RedisStoreMapper;
+import org.apache.storm.streams.operations.Consumer;
 import org.apache.storm.streams.operations.Count;
+import org.apache.storm.streams.operations.FlatMapFunction;
+import org.apache.storm.streams.operations.Function;
 import org.apache.storm.streams.operations.IndexValueMapper;
 import org.apache.storm.streams.Pair;
 import org.apache.storm.streams.operations.PairFunction;
@@ -17,6 +20,8 @@ import org.apache.storm.testing.TestWordSpout;
 import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
+
+import java.util.Arrays;
 
 public class Test {
     public static void main(String[] args) {
@@ -144,28 +149,41 @@ public class Test {
 
 
         // WINDOW
-        PairStream<String, Long> stream2 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
-                .mapToPair(new PairFunction<String, String, Long>() {
-            @Override
-            public Pair<String, Long> apply(String input) {
-                return new Pair<>(input, 1L);
-            }
-        }).groupByKey()
-        .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(4)))
-                .aggregateByKey(new Count<Long>()).groupByKey();
-
-        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
-        stream.mapToPair(new PairFunction<String, String, Long>() {
-            @Override
-            public Pair<String, Long> apply(String input) {
-                return new Pair<>(input, 1L);
-            }
-        }).groupByKey()
-//                .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
-                .join(stream2)
-                .print();
+//        PairStream<String, Long> stream2 = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+//                .mapToPair(new PairFunction<String, String, Long>() {
+//            @Override
+//            public Pair<String, Long> apply(String input) {
+//                return new Pair<>(input, 1L);
+//            }
+//        }).groupByKey()
+//        .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(4)))
+//                .aggregateByKey(new Count<Long>()).groupByKey();
+//
+//        Stream<String> stream = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0));
+//        stream.mapToPair(new PairFunction<String, String, Long>() {
+//            @Override
+//            public Pair<String, Long> apply(String input) {
+//                return new Pair<>(input, 1L);
+//            }
+//        }).groupByKey()
+////                .window(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
+//                .join(stream2)
+//                .print();
         //END WINDOW
 
+
+        builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+                .mapToPair(new PairFunction<String, String, String>() {
+                    @Override
+                    public Pair<String, String> apply(String input) {
+                        return new Pair<>(input, input);
+                    }
+                }).groupByKey().flatMapValues(new FlatMapFunction<String, String>() {
+            @Override
+            public Iterable<String> apply(String input) {
+                return Arrays.asList(input.split(""));
+            }
+        }).print();
 
 //        stream.map(new Function<String, Integer>() {
 //            @Override
