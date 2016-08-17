@@ -15,6 +15,7 @@ import org.apache.storm.streams.operations.PairFunction;
 import org.apache.storm.streams.PairStream;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
+import org.apache.storm.streams.operations.Predicate;
 import org.apache.storm.streams.windowing.SlidingWindows;
 import org.apache.storm.testing.TestWordSpout;
 import org.apache.storm.topology.base.BaseWindowedBolt;
@@ -173,6 +174,12 @@ public class Test {
 
 
         builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+                .filter(new Predicate<String>() {
+                    @Override
+                    public boolean test(String input) {
+                        return input.length() > 2;
+                    }
+                })
                 .mapToPair(new PairFunction<String, String, String>() {
                     @Override
                     public Pair<String, String> apply(String input) {

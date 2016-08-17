@@ -3,6 +3,7 @@ package org.apache.storm.streams.processors;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import org.apache.storm.streams.Pair;
+import org.apache.storm.streams.Tuple3;
 import org.apache.storm.streams.operations.ValueJoiner;
 
 import java.util.ArrayList;
@@ -52,11 +53,11 @@ public class JoinProcessor<K, R, V1, V2> extends BaseProcessor<Pair<K, ?>> imple
     private void joinAndForward(List<Pair<K, V1>> leftRows, List<Pair<K, V2>> rightRows) {
         if (leftRows.size() <= rightRows.size()) {
             for (Tuple3<K, V1, V2> res : join(getJoinTable(leftRows), rightRows)) {
-                context.forward(new Pair<>(res.getFirst(), valueJoiner.apply(res.getSecond(), res.getThird())));
+                context.forward(new Pair<>(res._1, valueJoiner.apply(res._2, res._3)));
             }
         } else {
             for (Tuple3<K, V2, V1> res : join(getJoinTable(rightRows), leftRows)) {
-                context.forward(new Pair(res.getFirst(), valueJoiner.apply(res.getThird(), res.getSecond())));
+                context.forward(new Pair(res._1, valueJoiner.apply(res._3, res._2)));
             }
         }
     }
@@ -79,30 +80,6 @@ public class JoinProcessor<K, R, V1, V2> extends BaseProcessor<Pair<K, ?>> imple
             m.put(v.getFirst(), v.getSecond());
         }
         return m;
-    }
-
-    private static class Tuple3<T1, T2, T3> {
-        private final T1 first;
-        private final T2 second;
-        private final T3 third;
-
-        public Tuple3(T1 first, T2 second, T3 third) {
-            this.first = first;
-            this.second = second;
-            this.third = third;
-        }
-
-        public T1 getFirst() {
-            return first;
-        }
-
-        public T2 getSecond() {
-            return second;
-        }
-
-        public T3 getThird() {
-            return third;
-        }
     }
 
     public String getLeftStream() {

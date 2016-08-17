@@ -125,16 +125,6 @@ public class StreamBuilder {
         return newNode;
     }
 
-    Node parentNode(Node curNode) {
-        Set<Node> parentNode = parentNodes(curNode);
-        if (parentNode.size() > 1) {
-            throw new IllegalArgumentException("Node " + curNode + " has more than one parent node.");
-        } else if (parentNode.size() == 0) {
-            throw new IllegalArgumentException("Node " + curNode + " has no parent.");
-        }
-        return parentNode.iterator().next();
-    }
-
     private void updateNodeGroupingInfo(PartitionNode partitionNode) {
         if (partitionNode.getGroupingInfo() != null) {
             for (Node parent : parentNodes(partitionNode)) {
@@ -156,6 +146,16 @@ public class StreamBuilder {
             }
             timestampFieldName = tsField;
         }
+    }
+
+    private Node parentNode(Node curNode) {
+        Set<Node> parentNode = parentNodes(curNode);
+        if (parentNode.size() > 1) {
+            throw new IllegalArgumentException("Node " + curNode + " has more than one parent node.");
+        } else if (parentNode.size() == 0) {
+            throw new IllegalArgumentException("Node " + curNode + " has no parent.");
+        }
+        return parentNode.iterator().next();
     }
 
     private Set<Node> parentNodes(Node curNode) {
@@ -181,7 +181,7 @@ public class StreamBuilder {
             processorNode.setWindowed(isWindowed(processorNode));
             processorNode.setWindowedParentStreams(getWindowedParentStreams(processorNode));
         }
-        final Set<ProcessorNode> initialProcessors = initialProcessors(curGroup);
+        final Set<ProcessorNode> initialProcessors = initialProcessors();
         Set<Window<?, ?>> windowParams = getWindowParams(initialProcessors);
         StreamBolt bolt;
         if (windowParams.isEmpty()) {
@@ -260,20 +260,20 @@ public class StreamBuilder {
         }
     }
 
-    private StreamBolt addWindowedBolt(TopologyBuilder topologyBuilder,
-                                       String boltId,
-                                       Set<ProcessorNode> initialProcessors,
-                                       Window<?, ?> windowParam) {
-        WindowedProcessorBolt bolt = new WindowedProcessorBolt(graph, curGroup, windowParam);
+    private StreamBolt addBolt(TopologyBuilder topologyBuilder,
+                               String boltId,
+                               Set<ProcessorNode> initialProcessors) {
+        ProcessorBolt bolt = new ProcessorBolt(graph, curGroup);
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
         bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
         return bolt;
     }
 
-    private StreamBolt addBolt(TopologyBuilder topologyBuilder,
-                               String boltId,
-                               Set<ProcessorNode> initialProcessors) {
-        ProcessorBolt bolt = new ProcessorBolt(graph, curGroup);
+    private StreamBolt addWindowedBolt(TopologyBuilder topologyBuilder,
+                                       String boltId,
+                                       Set<ProcessorNode> initialProcessors,
+                                       Window<?, ?> windowParam) {
+        WindowedProcessorBolt bolt = new WindowedProcessorBolt(graph, curGroup, windowParam);
         BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
         bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
         return bolt;
@@ -330,7 +330,7 @@ public class StreamBuilder {
         }
     }
 
-    private Set<ProcessorNode> initialProcessors(List<ProcessorNode> curGroup) {
+    private Set<ProcessorNode> initialProcessors() {
         Set<ProcessorNode> nodes = new HashSet<>();
         Set<ProcessorNode> curSet = new HashSet<>(curGroup);
         for (ProcessorNode node : curGroup) {
