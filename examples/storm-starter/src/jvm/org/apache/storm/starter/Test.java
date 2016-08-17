@@ -5,6 +5,7 @@ import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
 import org.apache.storm.redis.common.mapper.RedisDataTypeDescription;
 import org.apache.storm.redis.common.mapper.RedisStoreMapper;
+import org.apache.storm.streams.operations.Aggregator;
 import org.apache.storm.streams.operations.Consumer;
 import org.apache.storm.streams.operations.Count;
 import org.apache.storm.streams.operations.FlatMapFunction;
@@ -16,6 +17,7 @@ import org.apache.storm.streams.PairStream;
 import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
 import org.apache.storm.streams.operations.Predicate;
+import org.apache.storm.streams.operations.Reducer;
 import org.apache.storm.streams.windowing.SlidingWindows;
 import org.apache.storm.testing.TestWordSpout;
 import org.apache.storm.topology.base.BaseWindowedBolt;
@@ -172,25 +174,42 @@ public class Test {
 //                .print();
         //END WINDOW
 
+//
+//        builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+//                .filter(new Predicate<String>() {
+//                    @Override
+//                    public boolean test(String input) {
+//                        return input.length() > 2;
+//                    }
+//                })
+//                .mapToPair(new PairFunction<String, String, String>() {
+//                    @Override
+//                    public Pair<String, String> apply(String input) {
+//                        return new Pair<>(input, input);
+//                    }
+//                }).groupByKey().flatMapValues(new FlatMapFunction<String, String>() {
+//            @Override
+//            public Iterable<String> apply(String input) {
+//                return Arrays.asList(input.split(""));
+//            }
+//        }).print();
 
+        // GBKW
         builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
                 .filter(new Predicate<String>() {
                     @Override
                     public boolean test(String input) {
-                        return input.length() > 2;
+                        return input.equals("nathan");
                     }
                 })
-                .mapToPair(new PairFunction<String, String, String>() {
+                .mapToPair(new PairFunction<String, String, Integer>() {
                     @Override
-                    public Pair<String, String> apply(String input) {
-                        return new Pair<>(input, input);
+                    public Pair<String, Integer> apply(String input) {
+                        return new Pair<>(input, 1);
                     }
-                }).groupByKey().flatMapValues(new FlatMapFunction<String, String>() {
-            @Override
-            public Iterable<String> apply(String input) {
-                return Arrays.asList(input.split(""));
-            }
-        }).print();
+                }).groupByKeyAndWindow(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
+                .print();
+        // END GBKW
 
 //        stream.map(new Function<String, Integer>() {
 //            @Override

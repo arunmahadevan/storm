@@ -15,6 +15,11 @@ import org.apache.storm.streams.processors.ReduceByKeyProcessor;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.tuple.Fields;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+
 public class PairStream<K, V> extends Stream<Pair<K, V>> {
 
     PairStream(StreamBuilder topology, Node node) {
@@ -77,6 +82,20 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
      */
     public PairStream<K, V> groupByKey() {
         return partitionBy(KEY);
+    }
+
+    /**
+     * Returns a new stream where the values are grouped by keys and the given window.
+     * The values that arrive within a window having the same key will be merged together and returned
+     * as an Iterable of values mapped to the key.
+     *
+     * @param window the window configuration
+     * @return the new stream
+     */
+    public PairStream<K, Iterable<V>> groupByKeyAndWindow(Window<?, ?> window) {
+        return groupByKey()
+                .window(window)
+                .aggregateByKey(new MergeValues<V>());
     }
 
     /**
@@ -149,5 +168,23 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
 
     private PairStream<K, V> toPairStream(Stream<Pair<K, V>> stream) {
         return new PairStream<>(stream.getStreamBuilder(), stream.getNode());
+    }
+
+    // used internally to merge values in groupByKeyAndWindow
+    private static class MergeValues<V> implements Aggregator<V, Iterable<V>> {
+        @Override
+        public Iterable<V> init() {
+            return new ArrayList<>();
+        }
+
+        @Override
+        public Iterable<V> apply(V value, Iterable<V> aggregate) {
+            List<V> result = new ArrayList<>();
+            for (V elmnt : aggregate) {
+                result.add(elmnt);
+            }
+            result.add(value);
+            return result;
+        }
     }
 }
