@@ -4,12 +4,14 @@ import org.apache.storm.streams.operations.Aggregator;
 import org.apache.storm.streams.operations.Consumer;
 import org.apache.storm.streams.operations.FlatMapFunction;
 import org.apache.storm.streams.operations.Function;
+import org.apache.storm.streams.operations.IdentityFunction;
 import org.apache.storm.streams.operations.PairFlatMapFunction;
 import org.apache.storm.streams.operations.PairFunction;
 import org.apache.storm.streams.operations.Predicate;
 import org.apache.storm.streams.operations.PrintConsumer;
 import org.apache.storm.streams.operations.Reducer;
 import org.apache.storm.streams.processors.AggregateProcessor;
+import org.apache.storm.streams.processors.BranchProcessor;
 import org.apache.storm.streams.processors.FilterProcessor;
 import org.apache.storm.streams.processors.FlatMapProcessor;
 import org.apache.storm.streams.processors.ForEachProcessor;
@@ -21,6 +23,10 @@ import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.topology.IBasicBolt;
 import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.tuple.Fields;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class Stream<T> {
     protected static final Fields KEY = new Fields("value");
@@ -53,7 +59,7 @@ public class Stream<T> {
     public Stream<T> filter(Predicate<T> predicate) {
         return new Stream<>(
                 streamBuilder,
-                addProcessorNode(new FilterProcessor<>(predicate), node.getOutputFields()));
+                addProcessorNode(new FilterProcessor<>(predicate), VALUE));
     }
 
     /**
@@ -153,9 +159,7 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> peek(Consumer<T> action) {
-        return new Stream<>(
-                streamBuilder,
-                addProcessorNode(new PeekProcessor<>(action), node.getOutputFields()));
+        return new Stream<>(streamBuilder, addProcessorNode(new PeekProcessor<>(action), node.getOutputFields()));
     }
 
     /**
@@ -204,6 +208,23 @@ public class Stream<T> {
     public Stream<T> repartition(int parallelism) {
         return new Stream<>(streamBuilder,
                 addNode(new PartitionNode(stream, node.getOutputFields(), null), parallelism));
+    }
+
+    public List<Stream<T>> branch(Predicate<T>... predicates) {
+        List<Stream<T>> childStreams = new ArrayList<>();
+        if (predicates.length > 1) {
+            BranchProcessor<T> branchProcessor = new BranchProcessor<>();
+            Stream<T> branchStream = new Stream<>(streamBuilder, addProcessorNode(branchProcessor, VALUE));
+            for (Predicate<T> predicate : predicates) {
+                ProcessorNode child = makeProcessorNode(new MapProcessor<>(new IdentityFunction<>()), node.getOutputFields());
+                String childOutputStream = child.getOutputStreams().iterator().next() + "-branch";
+                branchStream.node.addOutputStream(childOutputStream);
+                branchStream.addNode(child, childOutputStream);
+                childStreams.add(new Stream<T>(streamBuilder, child));
+                branchProcessor.addPredicate(predicate, childOutputStream);
+            }
+        }
+        return childStreams;
     }
 
     /**
@@ -271,12 +292,8 @@ public class Stream<T> {
         return node;
     }
 
-    StreamBuilder getStreamBuilder() {
-        return streamBuilder;
-    }
-
     Node addNode(Node node) {
-        return streamBuilder.addNode(this, node);
+        return streamBuilder.addNode(this.node, node);
     }
 
     Node addProcessorNode(Processor<?> processor, Fields outputFields) {
@@ -288,19 +305,29 @@ public class Stream<T> {
                 , outputFields);
     }
 
+    String getStream() {
+        return stream;
+    }
+
+    private Node addNode(Node node, String parentStreamId) {
+        return streamBuilder.addNode(this.node, node, parentStreamId);
+    }
+
+    private Node addNode(Node node, int parallelism) {
+        return streamBuilder.addNode(this.node, node, parallelism);
+    }
+
+    private Node addNode(Node node, int parallelism, String parentStreamId) {
+        return streamBuilder.addNode(this.node, node, parallelism, parentStreamId);
+    }
+
     private void addSinkNode(SinkNode sinkNode, int parallelism) {
         String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
         sinkNode.setComponentId(boltId);
         sinkNode.setParallelism(parallelism);
-        addNode(sinkNode, parallelism, node.addOutputStream(StreamUtil.getSinkStream(stream)));
-    }
-
-    private Node addNode(Node node, int parallelism) {
-        return streamBuilder.addNode(this, node, parallelism);
-    }
-
-    private Node addNode(Node node, int parallelism, String parentStreamId) {
-        return streamBuilder.addNode(this, node, parallelism, parentStreamId);
+        String sinkStream = StreamUtil.getSinkStream(stream);
+        node.addOutputStream(sinkStream);
+        addNode(sinkNode, parallelism, sinkStream);
     }
 
     private Stream<T> global() {

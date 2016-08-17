@@ -26,6 +26,13 @@ public class ChainedProcessorContext implements ProcessorContext {
     }
 
     @Override
+    public <T> void forward(T input, String stream) {
+        for (ProcessorContext context : contexts) {
+            context.forward(input, stream);
+        }
+    }
+
+    @Override
     public boolean isWindowed() {
         return processorNode.isWindowed();
     }

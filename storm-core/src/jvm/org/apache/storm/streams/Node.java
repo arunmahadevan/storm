@@ -90,9 +90,8 @@ abstract class Node implements Serializable {
         return new HashSet<>(rev.get(stream));
     }
 
-    String addOutputStream(String streamId) {
+    void addOutputStream(String streamId) {
         outputStreams.add(streamId);
-        return streamId;
     }
 
     @Override

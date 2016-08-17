@@ -42,7 +42,6 @@ public class EmittingProcessorContext implements ProcessorContext {
         this.punctuation = createPunctuation();
     }
 
-    // TODO: for event ts emit with ts
     @Override
     public <T> void forward(T input) {
         if (input instanceof Pair) {
@@ -57,6 +56,13 @@ public class EmittingProcessorContext implements ProcessorContext {
             maybeAck();
         } else {
             emit(new Values(input));
+        }
+    }
+
+    @Override
+    public <T> void forward(T input, String stream) {
+        if (stream.equals(outputStreamId)) {
+            forward(input);
         }
     }
 

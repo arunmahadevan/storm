@@ -167,7 +167,7 @@ public class PairStream<K, V> extends Stream<Pair<K, V>> {
     }
 
     private PairStream<K, V> toPairStream(Stream<Pair<K, V>> stream) {
-        return new PairStream<>(stream.getStreamBuilder(), stream.getNode());
+        return new PairStream<>(stream.streamBuilder, stream.node);
     }
 
     // used internally to merge values in groupByKeyAndWindow

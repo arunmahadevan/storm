@@ -104,25 +104,28 @@ public class StreamBuilder {
         }
     }
 
-    Node addNode(Stream<?> parent, Node newNode) {
-        return addNode(parent, newNode, parent.node.parallelism);
+    Node addNode(Node parent, Node child) {
+        return addNode(parent, child, parent.getParallelism(), parent.getOutputStreams().iterator().next());
     }
 
-    Node addNode(Stream<?> parent, Node newNode, int parallelism) {
-        return addNode(parent, newNode, parallelism, parent.stream);
+    Node addNode(Node parent, Node child, int parallelism) {
+        return addNode(parent, child, parallelism, parent.getOutputStreams().iterator().next());
     }
 
-    Node addNode(Stream<?> parent, Node newNode, int parallelism, String parentStreamId) {
-        Node parentNode = parent.getNode();
-        graph.addVertex(newNode);
-        graph.addEdge(parentNode, newNode);
-        newNode.setParallelism(parallelism);
-        if (parentNode instanceof WindowNode || parentNode instanceof PartitionNode) {
-            newNode.addParentStream(parentNode(parentNode), parentStreamId);
+    Node addNode(Node parent, Node child, String parentStreamId) {
+        return addNode(parent, child, parent.getParallelism(), parentStreamId);
+    }
+
+    Node addNode(Node parent, Node child, int parallelism, String parentStreamId) {
+        graph.addVertex(child);
+        graph.addEdge(parent, child);
+        child.setParallelism(parallelism);
+        if (parent instanceof WindowNode || parent instanceof PartitionNode) {
+            child.addParentStream(parentNode(parent), parentStreamId);
         } else {
-            newNode.addParentStream(parentNode, parentStreamId);
+            child.addParentStream(parent, parentStreamId);
         }
-        return newNode;
+        return child;
     }
 
     private void updateNodeGroupingInfo(PartitionNode partitionNode) {

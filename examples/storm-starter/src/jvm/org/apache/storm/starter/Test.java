@@ -25,6 +25,7 @@ import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
 
 import java.util.Arrays;
+import java.util.List;
 
 public class Test {
     public static void main(String[] args) {
@@ -195,21 +196,34 @@ public class Test {
 //        }).print();
 
         // GBKW
-        builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
-                .filter(new Predicate<String>() {
-                    @Override
-                    public boolean test(String input) {
-                        return input.equals("nathan");
-                    }
-                })
-                .mapToPair(new PairFunction<String, String, Integer>() {
-                    @Override
-                    public Pair<String, Integer> apply(String input) {
-                        return new Pair<>(input, 1);
-                    }
-                }).groupByKeyAndWindow(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
-                .print();
+//        builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+//                .filter(new Predicate<String>() {
+//                    @Override
+//                    public boolean test(String input) {
+//                        return input.equals("nathan");
+//                    }
+//                })
+//                .mapToPair(new PairFunction<String, String, Integer>() {
+//                    @Override
+//                    public Pair<String, Integer> apply(String input) {
+//                        return new Pair<>(input, 1);
+//                    }
+//                }).groupByKeyAndWindow(SlidingWindows.of(BaseWindowedBolt.Count.of(5), BaseWindowedBolt.Count.of(3)))
+//                .print();
         // END GBKW
+
+        //BRANCH
+        List<Stream<String>> streams = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+                .branch(match("nathan"), match("golda"));
+
+        streams.get(0).map(new Function<String, String>() {
+            @Override
+            public String apply(String input) {
+                return input.toUpperCase();
+            }
+        }).print();
+        streams.get(1).print();
+        //
 
 //        stream.map(new Function<String, Integer>() {
 //            @Override
@@ -331,6 +345,15 @@ public class Test {
         Utils.sleep(100000);
         cluster.killTopology("test");
         cluster.shutdown();
+    }
+
+    private static Predicate<String> match(final String s) {
+        return new Predicate<String>() {
+            @Override
+            public boolean test(String input) {
+                return s.equals(input);
+            }
+        };
     }
 
     private static class WordCountStoreMapper implements RedisStoreMapper {
