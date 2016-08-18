@@ -10,12 +10,12 @@ public class WindowNode extends Node {
 
     public static final String PUNCTUATION = "__punctuation";
 
-    public WindowNode(Window<?, ?> windowParams, String outputStream, Fields outputFields) {
+    WindowNode(Window<?, ?> windowParams, String outputStream, Fields outputFields) {
         super(outputStream, outputFields);
         this.windowParams = windowParams;
     }
 
-    public Window<?, ?> getWindowParams() {
+    Window<?, ?> getWindowParams() {
         return windowParams;
     }
 

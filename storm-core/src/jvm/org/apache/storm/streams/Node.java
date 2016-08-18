@@ -47,6 +47,10 @@ abstract class Node implements Serializable {
         parentStreams.put(parent, streamId);
     }
 
+    public void removeParentStreams(Node parent) {
+        parentStreams.removeAll(parent);
+    }
+
     public Fields getOutputFields() {
         return outputFields;
     }

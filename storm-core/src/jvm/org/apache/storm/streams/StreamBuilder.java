@@ -8,8 +8,11 @@ import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Table;
 import org.apache.storm.generated.StormTopology;
+import org.apache.storm.streams.operations.IdentityFunction;
 import org.apache.storm.streams.operations.TupleValueMapper;
 import org.apache.storm.streams.processors.JoinProcessor;
+import org.apache.storm.streams.processors.MapProcessor;
+import org.apache.storm.streams.processors.StatefulProcessor;
 import org.apache.storm.streams.windowing.Window;
 import org.apache.storm.topology.BoltDeclarer;
 import org.apache.storm.topology.IBasicBolt;
@@ -24,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,6 +44,7 @@ public class StreamBuilder {
     private final Table<Node, String, GroupingInfo> nodeGroupingInfo = HashBasedTable.create();
     private final Map<Node, WindowNode> windowInfo = new HashMap<>();
     private final List<ProcessorNode> curGroup = new ArrayList<>();
+    private int statefulProcessorCount = 0;
     private final List<StreamBolt> streamBolts = new ArrayList<>();
     private String timestampFieldName = null;
 
@@ -79,7 +84,7 @@ public class StreamBuilder {
             if (node instanceof SpoutNode) {
                 addSpout(topologyBuilder, (SpoutNode) node);
             } else if (node instanceof ProcessorNode) {
-                curGroup.add((ProcessorNode) node);
+                handleProcessorNode((ProcessorNode) node, topologyBuilder);
             } else if (node instanceof PartitionNode) {
                 updateNodeGroupingInfo((PartitionNode) node);
                 processCurGroup(topologyBuilder);
@@ -94,6 +99,44 @@ public class StreamBuilder {
         processCurGroup(topologyBuilder);
         mayBeAddTsField();
         return topologyBuilder.createTopology();
+    }
+
+    private void handleProcessorNode(ProcessorNode processorNode, TopologyBuilder topologyBuilder) {
+        if (processorNode.getProcessor() instanceof StatefulProcessor) {
+            statefulProcessorCount++;
+            Set<ProcessorNode> initialNodes = initialProcessors(
+                    curGroup.isEmpty() ? Collections.singletonList(processorNode) : curGroup);
+            Set<Window<?, ?>> windows = getWindowParams(initialNodes);
+            if (statefulProcessorCount > 1 || !windows.isEmpty()) {
+                if (!curGroup.isEmpty()) {
+                    processCurGroup(topologyBuilder);
+                } else if (!windows.isEmpty()) {
+                    // a stateful processor immediately follows a window specification
+                    splitStatefulProcessor(processorNode, topologyBuilder);
+                }
+                statefulProcessorCount = 1;
+            }
+        }
+        curGroup.add(processorNode);
+    }
+
+    /*
+     * force create a windowed bolt with identity nodes so that we don't
+     * have a stateful processor inside a windowed bolt.
+     */
+    private void splitStatefulProcessor(ProcessorNode processorNode, TopologyBuilder topologyBuilder) {
+        for (Node parent : StreamUtil.<Node>getParents(graph, processorNode)) {
+            ProcessorNode identity =
+                    new ProcessorNode(new MapProcessor<>(new IdentityFunction<>()),
+                            UniqueIdGen.getInstance().getUniqueStreamId(),
+                            parent.getOutputFields());
+            addNode(parent, identity);
+            graph.removeEdge(parent, processorNode);
+            processorNode.removeParentStreams(parent);
+            addNode(identity, processorNode);
+            curGroup.add(identity);
+        }
+        processCurGroup(topologyBuilder);
     }
 
     private void mayBeAddTsField() {
@@ -184,11 +227,15 @@ public class StreamBuilder {
             processorNode.setWindowed(isWindowed(processorNode));
             processorNode.setWindowedParentStreams(getWindowedParentStreams(processorNode));
         }
-        final Set<ProcessorNode> initialProcessors = initialProcessors();
+        final Set<ProcessorNode> initialProcessors = initialProcessors(curGroup);
         Set<Window<?, ?>> windowParams = getWindowParams(initialProcessors);
         StreamBolt bolt;
         if (windowParams.isEmpty()) {
-            bolt = addBolt(topologyBuilder, boltId, initialProcessors);
+            if (hasStatefulProcessor(curGroup)) {
+                bolt = addStatefulBolt(topologyBuilder, boltId, initialProcessors);
+            } else {
+                bolt = addBolt(topologyBuilder, boltId, initialProcessors);
+            }
         } else if (windowParams.size() == 1) {
             bolt = addWindowedBolt(topologyBuilder, boltId, initialProcessors, windowParams.iterator().next());
         } else {
@@ -196,6 +243,15 @@ public class StreamBuilder {
         }
         streamBolts.add(bolt);
         curGroup.clear();
+    }
+
+    private boolean hasStatefulProcessor(List<ProcessorNode> processorNodes) {
+        for (ProcessorNode node : processorNodes) {
+            if (node.getProcessor() instanceof StatefulProcessor) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int getParallelism() {
@@ -272,6 +328,15 @@ public class StreamBuilder {
         return bolt;
     }
 
+    private StreamBolt addStatefulBolt(TopologyBuilder topologyBuilder,
+                                       String boltId,
+                                       Set<ProcessorNode> initialProcessors) {
+        StatefulProcessorBolt bolt = new StatefulProcessorBolt<>(graph, curGroup);
+        BoltDeclarer boltDeclarer = topologyBuilder.setBolt(boltId, bolt, getParallelism());
+        bolt.setStreamToInitialProcessors(wireBolt(boltDeclarer, initialProcessors));
+        return bolt;
+    }
+
     private StreamBolt addWindowedBolt(TopologyBuilder topologyBuilder,
                                        String boltId,
                                        Set<ProcessorNode> initialProcessors,
@@ -333,7 +398,7 @@ public class StreamBuilder {
         }
     }
 
-    private Set<ProcessorNode> initialProcessors() {
+    private Set<ProcessorNode> initialProcessors(List<ProcessorNode> curGroup) {
         Set<ProcessorNode> nodes = new HashSet<>();
         Set<ProcessorNode> curSet = new HashSet<>(curGroup);
         for (ProcessorNode node : curGroup) {

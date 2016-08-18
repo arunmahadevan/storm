@@ -25,7 +25,6 @@ import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.tuple.Fields;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class Stream<T> {
@@ -56,10 +55,8 @@ public class Stream<T> {
      * @param predicate the predicate to apply to each element to determine if it should be included
      * @return the new stream
      */
-    public Stream<T> filter(Predicate<T> predicate) {
-        return new Stream<>(
-                streamBuilder,
-                addProcessorNode(new FilterProcessor<>(predicate), VALUE));
+    public Stream<T> filter(Predicate<? super T> predicate) {
+        return new Stream<>(streamBuilder, addProcessorNode(new FilterProcessor<>(predicate), VALUE));
     }
 
     /**
@@ -68,10 +65,8 @@ public class Stream<T> {
      * @param function a mapping function to be applied to each value in this stream.
      * @return the new stream
      */
-    public <R> Stream<R> map(Function<T, R> function) {
-        return new Stream<>(
-                streamBuilder,
-                addProcessorNode(new MapProcessor<>(function), VALUE));
+    public <R> Stream<R> map(Function<? super T, ? extends R> function) {
+        return new Stream<>(streamBuilder, addProcessorNode(new MapProcessor<>(function), VALUE));
     }
 
     /**
@@ -83,22 +78,20 @@ public class Stream<T> {
      * @return the new stream of key-value pairs
      */
     public <K, V> PairStream<K, V> mapToPair(PairFunction<T, K, V> function) {
-        return new PairStream<>(streamBuilder,
-                addProcessorNode(new MapProcessor<>(function), KEY_VALUE));
+        return new PairStream<>(streamBuilder, addProcessorNode(new MapProcessor<>(function), KEY_VALUE));
     }
 
     /**
      * Returns a stream consisting of the results of replacing each value of this stream with the contents
      * produced by applying the provided mapping function to each value. This has the effect of applying
-     * a one-to-many transformation to the values of the stream, and then flattening the resulting elements into a new stream.
+     * a one-to-many transformation to the values of the stream, and then flattening the resulting elements
+     * into a new stream.
      *
      * @param function a mapping function to be applied to each value in this stream which produces new values.
      * @return the new stream
      */
     public <R> Stream<R> flatMap(FlatMapFunction<T, R> function) {
-        return new Stream<>(
-                streamBuilder,
-                addProcessorNode(new FlatMapProcessor<>(function), VALUE));
+        return new Stream<>(streamBuilder, addProcessorNode(new FlatMapProcessor<>(function), VALUE));
     }
 
     /**
@@ -113,14 +106,13 @@ public class Stream<T> {
      * @see #mapToPair(PairFunction)
      */
     public <K, V> PairStream<K, V> flatMapToPair(PairFlatMapFunction<T, K, V> function) {
-        return new PairStream<>(streamBuilder,
-                addProcessorNode(new FlatMapProcessor<>(function), KEY_VALUE));
+        return new PairStream<>(streamBuilder, addProcessorNode(new FlatMapProcessor<>(function), KEY_VALUE));
     }
 
     /**
-     * Returns a new stream consisting of the elements that fall within the window as specified by the window parameter. The
-     * {@link Window} specification could be used to specify sliding or tumbling windows based on time duration or event count.
-     * For example,
+     * Returns a new stream consisting of the elements that fall within the window as specified by the window parameter.
+     * The {@link Window} specification could be used to specify sliding or tumbling windows based on
+     * time duration or event count. For example,
      * <pre>
      * // time duration based sliding window
      * stream.window(SlidingWindows.of(Duration.minutes(10), Duration.minutes(1));
@@ -138,8 +130,7 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> window(Window<?, ?> window) {
-        return new Stream<>(streamBuilder,
-                addNode(new WindowNode(window, stream, node.getOutputFields())));
+        return new Stream<>(streamBuilder, addNode(new WindowNode(window, stream, node.getOutputFields())));
     }
 
     /**
@@ -147,7 +138,7 @@ public class Stream<T> {
      *
      * @param action an action to perform on the elements
      */
-    public void forEach(Consumer<T> action) {
+    public void forEach(Consumer<? super T> action) {
         addProcessorNode(new ForEachProcessor<>(action), new Fields());
     }
 
@@ -158,7 +149,7 @@ public class Stream<T> {
      * @param action the action to perform on the element as they are consumed from the stream
      * @return the new stream
      */
-    public Stream<T> peek(Consumer<T> action) {
+    public Stream<T> peek(Consumer<? super T> action) {
         return new Stream<>(streamBuilder, addProcessorNode(new PeekProcessor<>(action), node.getOutputFields()));
     }
 
@@ -175,10 +166,8 @@ public class Stream<T> {
      * @param <R>        the result type
      * @return the new stream
      */
-    public <R> Stream<R> aggregate(Aggregator<T, R> aggregator) {
-        return new Stream<>(
-                streamBuilder,
-                global().addProcessorNode(new AggregateProcessor<>(aggregator), VALUE));
+    public <R> Stream<R> aggregate(Aggregator<? super T, ? extends R> aggregator) {
+        return new Stream<>(streamBuilder, global().addProcessorNode(new AggregateProcessor<>(aggregator), VALUE));
     }
 
     /**
@@ -193,9 +182,7 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> reduce(Reducer<T> reducer) {
-        return new Stream<>(
-                streamBuilder,
-                global().addProcessorNode(new ReduceProcessor<>(reducer), VALUE));
+        return new Stream<>(streamBuilder, global().addProcessorNode(new ReduceProcessor<>(reducer), VALUE));
     }
 
     /**
@@ -206,22 +193,23 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> repartition(int parallelism) {
-        return new Stream<>(streamBuilder,
-                addNode(new PartitionNode(stream, node.getOutputFields(), null), parallelism));
+        Node partitionNode = addNode(node, new PartitionNode(stream, node.getOutputFields(), null), parallelism);
+        return new Stream<>(streamBuilder, partitionNode);
     }
 
-    public List<Stream<T>> branch(Predicate<T>... predicates) {
+    // TODO: possible heap pollution?
+    public List<? extends Stream<T>> branch(Predicate<T>... predicates) {
         List<Stream<T>> childStreams = new ArrayList<>();
-        if (predicates.length > 1) {
+        if (predicates.length > 0) {
             BranchProcessor<T> branchProcessor = new BranchProcessor<>();
-            Stream<T> branchStream = new Stream<>(streamBuilder, addProcessorNode(branchProcessor, VALUE));
+            Node branchNode = addProcessorNode(branchProcessor, VALUE);
             for (Predicate<T> predicate : predicates) {
                 ProcessorNode child = makeProcessorNode(new MapProcessor<>(new IdentityFunction<>()), node.getOutputFields());
-                String childOutputStream = child.getOutputStreams().iterator().next() + "-branch";
-                branchStream.node.addOutputStream(childOutputStream);
-                branchStream.addNode(child, childOutputStream);
+                String branchStream = child.getOutputStreams().iterator().next() + "-branch";
+                branchNode.addOutputStream(branchStream);
+                addNode(branchNode, child, branchStream);
                 childStreams.add(new Stream<T>(streamBuilder, child));
-                branchProcessor.addPredicate(predicate, childOutputStream);
+                branchProcessor.addPredicate(predicate, branchStream);
             }
         }
         return childStreams;
@@ -292,33 +280,36 @@ public class Stream<T> {
         return node;
     }
 
-    Node addNode(Node node) {
-        return streamBuilder.addNode(this.node, node);
+    Node addNode(Node parent, Node child) {
+        return streamBuilder.addNode(parent, child);
+    }
+
+    Node addNode(Node parent, Node child, int parallelism) {
+        return streamBuilder.addNode(parent, child, parallelism);
+    }
+
+    Node addNode(Node parent, Node child, String parentStreamId) {
+        return streamBuilder.addNode(parent, child, parentStreamId);
+    }
+
+    Node addNode(Node child) {
+        return addNode(this.node, child);
+    }
+
+    Node addNode(Node child, int parallelism, String parentStreamId) {
+        return streamBuilder.addNode(this.node, child, parallelism, parentStreamId);
     }
 
     Node addProcessorNode(Processor<?> processor, Fields outputFields) {
         return addNode(makeProcessorNode(processor, outputFields));
     }
 
-    ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields) {
-        return new ProcessorNode(processor, UniqueIdGen.getInstance().getUniqueStreamId()
-                , outputFields);
-    }
-
     String getStream() {
         return stream;
     }
 
-    private Node addNode(Node node, String parentStreamId) {
-        return streamBuilder.addNode(this.node, node, parentStreamId);
-    }
-
-    private Node addNode(Node node, int parallelism) {
-        return streamBuilder.addNode(this.node, node, parallelism);
-    }
-
-    private Node addNode(Node node, int parallelism, String parentStreamId) {
-        return streamBuilder.addNode(this.node, node, parallelism, parentStreamId);
+    private ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields) {
+        return new ProcessorNode(processor, UniqueIdGen.getInstance().getUniqueStreamId(), outputFields);
     }
 
     private void addSinkNode(SinkNode sinkNode, int parallelism) {
@@ -331,7 +322,7 @@ public class Stream<T> {
     }
 
     private Stream<T> global() {
-        return new Stream<>(streamBuilder,
-                addNode(new PartitionNode(stream, node.getOutputFields(), GroupingInfo.global())));
+        Node partitionNode = addNode(new PartitionNode(stream, node.getOutputFields(), GroupingInfo.global()));
+        return new Stream<>(streamBuilder, partitionNode);
     }
 }

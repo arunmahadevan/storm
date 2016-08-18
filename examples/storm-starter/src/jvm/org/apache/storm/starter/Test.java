@@ -7,25 +7,19 @@ import org.apache.storm.redis.common.mapper.RedisDataTypeDescription;
 import org.apache.storm.redis.common.mapper.RedisStoreMapper;
 import org.apache.storm.streams.operations.Aggregator;
 import org.apache.storm.streams.operations.Consumer;
-import org.apache.storm.streams.operations.Count;
 import org.apache.storm.streams.operations.FlatMapFunction;
-import org.apache.storm.streams.operations.Function;
+import org.apache.storm.streams.operations.aggregators.Count;
 import org.apache.storm.streams.operations.IndexValueMapper;
 import org.apache.storm.streams.Pair;
 import org.apache.storm.streams.operations.PairFunction;
-import org.apache.storm.streams.PairStream;
-import org.apache.storm.streams.Stream;
 import org.apache.storm.streams.StreamBuilder;
 import org.apache.storm.streams.operations.Predicate;
-import org.apache.storm.streams.operations.Reducer;
-import org.apache.storm.streams.windowing.SlidingWindows;
+import org.apache.storm.streams.operations.aggregators.Sum;
+import org.apache.storm.streams.windowing.TumblingWindows;
 import org.apache.storm.testing.TestWordSpout;
 import org.apache.storm.topology.base.BaseWindowedBolt;
 import org.apache.storm.tuple.ITuple;
 import org.apache.storm.utils.Utils;
-
-import java.util.Arrays;
-import java.util.List;
 
 public class Test {
     public static void main(String[] args) {
@@ -175,6 +169,27 @@ public class Test {
 //                .print();
         //END WINDOW
 
+        // STATE
+        builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+                .filter(new Predicate<String>() {
+                    @Override
+                    public boolean test(String input) {
+                        return input.equals("nathan");
+                    }
+                })
+                .mapToPair(new PairFunction<String, String, Long>() {
+                    @Override
+                    public Pair<String, Long> apply(String input) {
+                        return new Pair<>(input, 1L);
+                    }
+                })
+                .groupByKey()
+                .window(TumblingWindows.of(BaseWindowedBolt.Count.of(5)))
+                //.aggregateByKey(new Count<Long>())
+
+                .updateStateByKey(new Sum()).print();
+
+        // END STATE
 //
 //        builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
 //                .filter(new Predicate<String>() {
@@ -213,16 +228,16 @@ public class Test {
         // END GBKW
 
         //BRANCH
-        List<Stream<String>> streams = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
-                .branch(match("nathan"), match("golda"));
-
-        streams.get(0).map(new Function<String, String>() {
-            @Override
-            public String apply(String input) {
-                return input.toUpperCase();
-            }
-        }).print();
-        streams.get(1).print();
+//        List<Stream<String>> streams = builder.newStream(new TestWordSpout(), new IndexValueMapper<String>(0))
+//                .branch(match("nathan"), match("golda"));
+//
+//        streams.get(0).map(new Function<String, String>() {
+//            @Override
+//            public String apply(String input) {
+//                return input.toUpperCase();
+//            }
+//        }).print();
+//        streams.get(1).print();
         //
 
 //        stream.map(new Function<String, Integer>() {

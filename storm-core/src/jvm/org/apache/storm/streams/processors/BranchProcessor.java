@@ -8,11 +8,6 @@ import java.util.Map;
 public class BranchProcessor<T> extends BaseProcessor<T> {
     Map<Predicate<T>, String> predicateToStream = new HashMap<>();
 
-    @Override
-    public void init(ProcessorContext context) {
-        super.init(context);
-    }
-
     public void addPredicate(Predicate<T> predicate, String stream) {
         predicateToStream.put(predicate, stream);
     }

@@ -17,6 +17,11 @@ abstract class BaseProcessor<T> implements Processor<T> {
     }
 
     protected void execute(T input) {
+        // NOOP
+    }
+
+    protected void finish() {
+        // NOOP
     }
 
     @Override
@@ -27,9 +32,7 @@ abstract class BaseProcessor<T> implements Processor<T> {
     @Override
     public void punctuate(String stream) {
         if (stream == null || shouldPunctuate(stream)) {
-            if (this instanceof BatchProcessor) {
-                ((BatchProcessor) this).finish();
-            }
+            finish();
             context.forward(PUNCTUATION);
             punctuationState.clear();
         }

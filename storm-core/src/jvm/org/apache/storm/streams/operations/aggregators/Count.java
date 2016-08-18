@@ -1,4 +1,6 @@
-package org.apache.storm.streams.operations;
+package org.apache.storm.streams.operations.aggregators;
+
+import org.apache.storm.streams.operations.Aggregator;
 
 /**
  * Computes the count of values.

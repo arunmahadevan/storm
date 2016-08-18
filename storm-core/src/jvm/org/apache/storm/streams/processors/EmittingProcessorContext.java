@@ -76,10 +76,6 @@ public class EmittingProcessorContext implements ProcessorContext {
         return processorNode;
     }
 
-    public boolean isEmitPunctuation() {
-        return emitPunctuation;
-    }
-
     public void setEmitPunctuation(boolean emitPunctuation) {
         this.emitPunctuation = emitPunctuation;
     }
