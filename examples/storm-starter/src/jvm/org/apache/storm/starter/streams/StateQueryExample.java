@@ -56,7 +56,6 @@ public class StateQueryExample {
         StreamBuilder builder = new StreamBuilder();
         StreamState<String, Long> ss = builder.newStream(new TestWordSpout(), new ValueMapper<String>(0))
                 .mapToPair(w -> Pair.of(w, 1))
-                .groupByKey()
                 .updateStateByKey(new Count<>());
 
         /*

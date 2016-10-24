@@ -38,28 +38,43 @@ import java.util.Set;
 abstract class Node implements Serializable {
     private final Set<String> outputStreams;
     protected final Fields outputFields;
+    protected GroupingInfo groupingInfo;
     protected String componentId;
     protected int parallelism;
     // the parent streams that this node subscribes to
     private final Multimap<Node, String> parentStreams = ArrayListMultimap.create();
 
-    Node(Set<String> outputStreams, Fields outputFields, String componentId, int parallelism) {
+    Node(Set<String> outputStreams, Fields outputFields, String componentId, int parallelism,
+         GroupingInfo groupingInfo) {
         this.outputStreams = new HashSet<>(outputStreams);
         this.outputFields = outputFields;
         this.componentId = componentId;
         this.parallelism = parallelism;
+        this.groupingInfo = groupingInfo;
     }
 
-    Node(String outputStream, Fields outputFields, String componentId, int parallelism) {
-        this(Collections.singleton(outputStream), outputFields, componentId, parallelism);
+    Node(String outputStream, Fields outputFields, String componentId, int parallelism, GroupingInfo groupingInfo) {
+        this(Collections.singleton(outputStream), outputFields, componentId, parallelism, groupingInfo);
     }
 
-    Node(String outputStream, Fields outputFields, String componentId) {
-        this(outputStream, outputFields, componentId, 1);
+    Node(String outputStream, Fields outputFields, String componentId, GroupingInfo groupingInfo) {
+        this(outputStream, outputFields, componentId, 1, groupingInfo);
     }
 
     Node(String outputStream, Fields outputFields) {
         this(outputStream, outputFields, null);
+    }
+
+    Node(String outputStream, Fields outputFields, GroupingInfo groupingInfo) {
+        this(outputStream, outputFields, null, groupingInfo);
+    }
+
+    GroupingInfo getGroupingInfo() {
+        return groupingInfo;
+    }
+
+    void setGroupingInfo(GroupingInfo groupingInfo) {
+        this.groupingInfo = groupingInfo;
     }
 
     public Fields getOutputFields() {

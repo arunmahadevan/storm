@@ -20,7 +20,7 @@ package org.apache.storm.streams.processors;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import org.apache.storm.streams.Pair;
-import org.apache.storm.streams.Tuple3;
+import org.apache.storm.streams.tuple.Tuple3;
 import org.apache.storm.streams.operations.ValueJoiner;
 
 import java.util.ArrayList;

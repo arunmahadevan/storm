@@ -56,13 +56,9 @@ public class WordCountToBolt {
                  */
                 .mapToPair(w -> Pair.of(w, 1))
                 /*
-                 * group by key (word)
-                 */
-                .groupByKey()
-                /*
                  * aggregate the count
                  */
-                .aggregateByKey(new Count<>())
+                .countByKey()
                 /*
                  * The result of aggregation is forwarded to
                  * the RedisStoreBolt. The forwarded tuple is a

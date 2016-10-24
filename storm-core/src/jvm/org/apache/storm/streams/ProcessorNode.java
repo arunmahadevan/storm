@@ -33,13 +33,19 @@ public class ProcessorNode extends Node {
     private final Processor<?> processor;
     private final boolean isBatch;
     private boolean windowed;
+    private final boolean preservesKey;
     // Windowed parent streams
     private Set<String> windowedParentStreams = Collections.emptySet();
 
-    public ProcessorNode(Processor<?> processor, String outputStream, Fields outputFields) {
+    public ProcessorNode(Processor<?> processor, String outputStream, Fields outputFields, boolean preservesKey) {
         super(outputStream, outputFields);
         this.isBatch = processor instanceof BatchProcessor;
         this.processor = processor;
+        this.preservesKey = preservesKey;
+    }
+
+    public ProcessorNode(Processor<?> processor, String outputStream, Fields outputFields) {
+        this(processor, outputStream, outputFields, false);
     }
 
     public Processor<?> getProcessor() {
@@ -68,6 +74,10 @@ public class ProcessorNode extends Node {
 
     void setWindowedParentStreams(Set<String> windowedParentStreams) {
         this.windowedParentStreams = new HashSet<>(windowedParentStreams);
+    }
+
+    public boolean isPreservesKey() {
+        return preservesKey;
     }
 
     @Override

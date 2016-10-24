@@ -54,10 +54,6 @@ public class StatefulWordCount {
                  */
                 .mapToPair(w -> Pair.of(w, 1))
                 /*
-                 * group by the word
-                 */
-                .groupByKey()
-                /*
                  * update the word counts in the state
                  */
                 .updateStateByKey(new Count<>())

@@ -27,6 +27,7 @@ import org.apache.storm.streams.operations.PairFunction;
 import org.apache.storm.streams.operations.Predicate;
 import org.apache.storm.streams.operations.PrintConsumer;
 import org.apache.storm.streams.operations.Reducer;
+import org.apache.storm.streams.operations.aggregators.Count;
 import org.apache.storm.streams.processors.AggregateProcessor;
 import org.apache.storm.streams.processors.BranchProcessor;
 import org.apache.storm.streams.processors.FilterProcessor;
@@ -42,6 +43,8 @@ import org.apache.storm.topology.IBasicBolt;
 import org.apache.storm.topology.IRichBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.utils.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +55,8 @@ import java.util.List;
  * @param <T> the type of the value
  */
 public class Stream<T> {
+    private static final Logger LOG = LoggerFactory.getLogger(Stream.class);
+
     protected static final Fields KEY = new Fields("key");
     protected static final Fields VALUE = new Fields("value");
     protected static final Fields KEY_VALUE = new Fields("key", "value");
@@ -79,7 +84,7 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> filter(Predicate<? super T> predicate) {
-        return new Stream<>(streamBuilder, addProcessorNode(new FilterProcessor<>(predicate), VALUE));
+        return new Stream<>(streamBuilder, addProcessorNode(new FilterProcessor<>(predicate), VALUE, true));
     }
 
     /**
@@ -173,12 +178,11 @@ public class Stream<T> {
      * @return the new stream
      */
     public Stream<T> peek(Consumer<? super T> action) {
-        return new Stream<>(streamBuilder, addProcessorNode(new PeekProcessor<>(action), node.getOutputFields()));
+        return new Stream<>(streamBuilder, addProcessorNode(new PeekProcessor<>(action), node.getOutputFields(), true));
     }
 
     /**
-     * Aggregates the values in this stream using the aggregator. This does a global aggregation, i.e. the elements
-     * across all the partitions are forwarded to a single task for computing the aggregate.
+     * Aggregates the values in this stream using the aggregator. This does a global aggregation of values across all partitions.
      * <p>
      * If the stream is windowed, the aggregate result is emitted after each window activation and represents the
      * aggregate of elements that fall within that window.
@@ -194,7 +198,22 @@ public class Stream<T> {
     }
 
     /**
+     * Counts the number of values in this stream. This does a global count of values across all partitions.
+     * <p>
+     * If the stream is windowed, the counts are emitted after each window activation and represents the
+     * count of elements that fall within that window.
+     * If the stream is not windowed, the count is emitted as each new element in the stream is processed.
+     * </p>
+     *
+     * @return the new stream
+     */
+    public Stream<Long> count() {
+        return aggregate(new Count<>());
+    }
+
+    /**
      * Performs a reduction on the elements of this stream, by repeatedly applying the reducer.
+     * This does a global reduction of values across all partitions.
      * <p>
      * If the stream is windowed, the result is emitted after each window activation and represents the
      * reduction of elements that fall within that window.
@@ -218,6 +237,10 @@ public class Stream<T> {
     public Stream<T> repartition(int parallelism) {
         if (parallelism < 1) {
             throw new IllegalArgumentException("Parallelism should be >= 1");
+        }
+        if (node.getParallelism() == parallelism) {
+            LOG.debug("Node's current parallelism {}, new parallelism {}", node.getParallelism(), parallelism);
+            return this;
         }
         Node partitionNode = addNode(node, new PartitionNode(stream, node.getOutputFields()), parallelism);
         return new Stream<>(streamBuilder, partitionNode);
@@ -321,10 +344,8 @@ public class Stream<T> {
      * @return the result stream
      */
     public <V> PairStream<T, V> stateQuery(StreamState<T, V> streamState) {
-        // need all grouping for state query since the state is local
+        // need all grouping for state query since the state is per-task
         Node node = all().addProcessorNode(new StateQueryProcessor<>(streamState), KEY_VALUE);
-        // add 'updateState' node as parent so that state query gets processed after update state
-        addNode(streamState.getUpdateStateNode(), node, node.getParallelism());
         return new PairStream<>(streamBuilder, node);
     }
 
@@ -337,11 +358,15 @@ public class Stream<T> {
     }
 
     Node addNode(Node child) {
-        return addNode(this.node, child);
+        return addNode(node, child);
     }
 
     Node addProcessorNode(Processor<?> processor, Fields outputFields) {
         return addNode(makeProcessorNode(processor, outputFields));
+    }
+
+    Node addProcessorNode(Processor<?> processor, Fields outputFields, boolean preservesKey) {
+        return addNode(makeProcessorNode(processor, outputFields, preservesKey));
     }
 
     String getStream() {
@@ -357,12 +382,17 @@ public class Stream<T> {
     }
 
     private Node addNode(Node child, int parallelism, String parentStreamId) {
-        return streamBuilder.addNode(this.node, child, parallelism, parentStreamId);
+        return streamBuilder.addNode(node, child, parallelism, parentStreamId);
     }
 
     private ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields) {
-        return new ProcessorNode(processor, UniqueIdGen.getInstance().getUniqueStreamId(), outputFields);
+        return makeProcessorNode(processor, outputFields, false);
     }
+
+    private ProcessorNode makeProcessorNode(Processor<?> processor, Fields outputFields, boolean preservesKey) {
+        return new ProcessorNode(processor, UniqueIdGen.getInstance().getUniqueStreamId(), outputFields, preservesKey);
+    }
+
 
     private void addSinkNode(SinkNode sinkNode, int parallelism) {
         String boltId = UniqueIdGen.getInstance().getUniqueBoltId();
@@ -387,6 +417,9 @@ public class Stream<T> {
     }
 
     private Stream<T> all() {
+        if (node.getParallelism() == 1) {
+            return this;
+        }
         Node partitionNode = addNode(new PartitionNode(stream, node.getOutputFields(), GroupingInfo.all()));
         return new Stream<>(streamBuilder, partitionNode);
     }
