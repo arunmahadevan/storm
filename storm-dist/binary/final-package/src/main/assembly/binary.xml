@@ -48,6 +48,13 @@
                 <include>*/**</include>
             </includes>
         </fileSet>
+        <fileSet>
+            <directory>${project.basedir}/../storm-autocreds-bin/target/autocreds/autocreds/</directory>
+            <outputDirectory>./</outputDirectory>
+            <includes>
+                <include>*/**</include>
+            </includes>
+        </fileSet>
         <!--
              $STORM_HOME/bin
          -->

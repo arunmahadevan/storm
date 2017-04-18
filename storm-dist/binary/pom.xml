@@ -43,6 +43,7 @@
     <modules>
         <module>storm-client-bin</module>
         <module>storm-webapp-bin</module>
+        <module>storm-autocreds-bin</module>
         <module>final-package</module>
     </modules>
 </project>
