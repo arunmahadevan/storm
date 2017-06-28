@@ -29,6 +29,7 @@ import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
 import org.apache.storm.windowing.CountEvictionPolicy;
 import org.apache.storm.windowing.CountTriggerPolicy;
+import org.apache.storm.windowing.Event;
 import org.apache.storm.windowing.EvictionPolicy;
 import org.apache.storm.windowing.TimeEvictionPolicy;
 import org.apache.storm.windowing.TimeTriggerPolicy;
@@ -45,6 +46,7 @@ import org.apache.storm.windowing.WindowManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -145,8 +147,15 @@ public class WindowedBoltExecutor implements IRichBolt {
     }
 
     private WindowManager<Tuple> initWindowManager(WindowLifecycleListener<Tuple> lifecycleListener, Map<String, Object> topoConf,
-                                                   TopologyContext context) {
-        WindowManager<Tuple> manager = new WindowManager<>(lifecycleListener);
+                                                   TopologyContext context, Collection<Event<Tuple>> queue) {
+        WindowManager<Tuple> manager;
+
+        if (queue != null) {
+            manager = new WindowManager<>(lifecycleListener, queue);
+        } else {
+            manager = new WindowManager<>(lifecycleListener);
+        }
+
         Count windowLengthCount = null;
         Duration slidingIntervalDuration = null;
         Count slidingIntervalCount = null;
@@ -268,10 +277,15 @@ public class WindowedBoltExecutor implements IRichBolt {
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
+        doPrepare(topoConf, context, collector, null);
+    }
+
+    protected void doPrepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector,
+                             Collection<Event<Tuple>> queue) {
         this.windowedOutputCollector = new WindowedOutputCollector(collector);
         bolt.prepare(topoConf, context, windowedOutputCollector);
         this.listener = newWindowLifecycleListener();
-        this.windowManager = initWindowManager(listener, topoConf, context);
+        this.windowManager = initWindowManager(listener, topoConf, context, queue);
         start();
         LOG.info("Initialized window manager {} ", windowManager);
     }
@@ -327,17 +341,22 @@ public class WindowedBoltExecutor implements IRichBolt {
             @Override
             public void onActivation(List<Tuple> tuples, List<Tuple> newTuples, List<Tuple> expiredTuples, Long timestamp) {
                 windowedOutputCollector.setContext(tuples);
-                bolt.execute(new TupleWindowImpl(tuples, newTuples, expiredTuples, getWindowStartTs(timestamp), timestamp));
+                boltExecute(tuples, newTuples, expiredTuples, timestamp);
             }
 
-            private Long getWindowStartTs(Long endTs) {
-                Long res = null;
-                if (endTs != null && windowLengthDuration != null) {
-                    res = endTs - windowLengthDuration.value;
-                }
-                return res;
-            }
         };
+    }
+
+    protected void boltExecute(List<Tuple> tuples, List<Tuple> newTuples, List<Tuple> expiredTuples, Long timestamp) {
+        bolt.execute(new TupleWindowImpl(tuples, newTuples, expiredTuples, getWindowStartTs(timestamp), timestamp));
+    }
+
+    private Long getWindowStartTs(Long endTs) {
+        Long res = null;
+        if (endTs != null && windowLengthDuration != null) {
+            res = endTs - windowLengthDuration.value;
+        }
+        return res;
     }
 
     /**

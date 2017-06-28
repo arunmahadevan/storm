@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -53,7 +54,7 @@ public class WindowManager<T> implements TriggerHandler {
     public static final int EXPIRE_EVENTS_THRESHOLD = 100;
 
     private final WindowLifecycleListener<T> windowLifecycleListener;
-    private final ConcurrentLinkedQueue<Event<T>> queue;
+    private final Collection<Event<T>> queue;
     private final List<T> expiredEvents;
     private final Set<Event<T>> prevWindowEvents;
     private final AtomicInteger eventsSinceLastExpiry;
@@ -62,8 +63,12 @@ public class WindowManager<T> implements TriggerHandler {
     private TriggerPolicy<T> triggerPolicy;
 
     public WindowManager(WindowLifecycleListener<T> lifecycleListener) {
+        this(lifecycleListener, new ConcurrentLinkedQueue<>());
+    }
+
+    public WindowManager(WindowLifecycleListener<T> lifecycleListener, Collection<Event<T>> queue) {
         windowLifecycleListener = lifecycleListener;
-        queue = new ConcurrentLinkedQueue<>();
+        this.queue = queue;
         expiredEvents = new ArrayList<>();
         prevWindowEvents = new HashSet<>();
         eventsSinceLastExpiry = new AtomicInteger();
