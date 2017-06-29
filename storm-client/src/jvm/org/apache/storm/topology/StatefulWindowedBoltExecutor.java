@@ -28,6 +28,7 @@ import org.apache.storm.windowing.WindowLifecycleListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.util.AbstractCollection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -284,7 +285,7 @@ public class StatefulWindowedBoltExecutor<T extends State> extends WindowedBoltE
         }
     }
 
-    private static class WindowPartition<T> implements Iterable<Event<T>> {
+    public static class WindowPartition<T> implements Iterable<Event<T>> {
         private final ConcurrentLinkedQueue<Event<T>> events = new ConcurrentLinkedQueue<>();
         private final AtomicInteger size = new AtomicInteger();
         private final long id;
@@ -305,19 +306,20 @@ public class StatefulWindowedBoltExecutor<T extends State> extends WindowedBoltE
         @Override
         public Iterator<Event<T>> iterator() {
             return new Iterator<Event<T>>() {
+                Iterator<Event<T>> it = events.iterator();
                 @Override
                 public boolean hasNext() {
-                    return events.iterator().hasNext();
+                    return it.hasNext();
                 }
 
                 @Override
                 public Event<T> next() {
-                    return events.iterator().next();
+                    return it.next();
                 }
 
                 @Override
                 public void remove() {
-                    events.iterator().remove();
+                    it.remove();
                     size.decrementAndGet();
                 }
             };

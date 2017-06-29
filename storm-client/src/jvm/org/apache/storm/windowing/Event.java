@@ -17,6 +17,8 @@
  */
 package org.apache.storm.windowing;
 
+import java.io.Serializable;
+
 /**
  * An event is a wrapper object that gets stored in the window.
  *

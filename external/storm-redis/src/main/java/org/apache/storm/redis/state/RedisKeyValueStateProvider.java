@@ -45,7 +45,7 @@ public class RedisKeyValueStateProvider implements StateProvider {
     @Override
     public State newState(String namespace, Map<String, Object> topoConf, TopologyContext context) {
         try {
-            return getRedisKeyValueState(namespace, getStateConfig(topoConf));
+            return getRedisKeyValueState(namespace, topoConf, getStateConfig(topoConf), context);
         } catch (Exception ex) {
             LOG.error("Error loading config from storm conf {}", topoConf);
             throw new RuntimeException(ex);
@@ -66,7 +66,8 @@ public class RedisKeyValueStateProvider implements StateProvider {
         return stateConfig;
     }
 
-    private RedisKeyValueState getRedisKeyValueState(String namespace, StateConfig config) throws Exception {
+    private RedisKeyValueState getRedisKeyValueState(String namespace, Map<String, Object> topoConf, StateConfig config,
+                                                     TopologyContext context) throws Exception {
         JedisPoolConfig jedisPoolConfig = getJedisPoolConfig(config);
         JedisClusterConfig jedisClusterConfig = getJedisClusterConfig(config);
 
@@ -75,34 +76,34 @@ public class RedisKeyValueStateProvider implements StateProvider {
         }
 
         if (jedisPoolConfig != null) {
-            return new RedisKeyValueState(namespace, jedisPoolConfig, getKeySerializer(config), getValueSerializer(config));
+            return new RedisKeyValueState(namespace, jedisPoolConfig, getKeySerializer(context, topoConf, config), getValueSerializer(context, topoConf, config));
         } else {
-            return new RedisKeyValueState(namespace, jedisClusterConfig, getKeySerializer(config), getValueSerializer(config));
+            return new RedisKeyValueState(namespace, jedisClusterConfig, getKeySerializer(context, topoConf, config), getValueSerializer(context, topoConf, config));
         }
     }
 
-    private Serializer getKeySerializer(StateConfig config) throws Exception {
+    private Serializer getKeySerializer(TopologyContext context, Map<String, Object> topoConf, StateConfig config) throws Exception {
         Serializer serializer = null;
         if (config.keySerializerClass != null) {
             Class<?> klass = (Class<?>) Class.forName(config.keySerializerClass);
             serializer = (Serializer) klass.newInstance();
         } else if (config.keyClass != null) {
-            serializer = new DefaultStateSerializer(Collections.singletonList(Class.forName(config.keyClass)));
+            serializer = new DefaultStateSerializer(context, topoConf, Collections.singletonList(Class.forName(config.keyClass)));
         } else {
-            serializer = new DefaultStateSerializer();
+            serializer = new DefaultStateSerializer(context, topoConf);
         }
         return serializer;
     }
 
-    private Serializer getValueSerializer(StateConfig config) throws Exception {
+    private Serializer getValueSerializer(TopologyContext context, Map<String, Object> topoConf, StateConfig config) throws Exception {
         Serializer serializer = null;
         if (config.valueSerializerClass != null) {
             Class<?> klass = (Class<?>) Class.forName(config.valueSerializerClass);
             serializer = (Serializer) klass.newInstance();
         } else if (config.valueClass != null) {
-            serializer = new DefaultStateSerializer(Collections.singletonList(Class.forName(config.valueClass)));
+            serializer = new DefaultStateSerializer(context, topoConf, Collections.singletonList(Class.forName(config.valueClass)));
         } else {
-            serializer = new DefaultStateSerializer();
+            serializer = new DefaultStateSerializer(context, topoConf);
         }
         return serializer;
     }
