@@ -22,7 +22,7 @@ package org.apache.storm.windowing;
  *
  * @param <T> the type of the event that is tracked
  */
-public interface TriggerPolicy<T> {
+public interface TriggerPolicy<T, S> {
     /**
      * Tracks the event and could use this to invoke the trigger.
      *
@@ -46,4 +46,19 @@ public interface TriggerPolicy<T> {
      * Any clean up could be handled here.
      */
     void shutdown();
+
+    /**
+     * Return runtime state to be checkpointed by the framework for restoring the trigger policy
+     * in case of failures.
+     *
+     * @return the state
+     */
+    S getState();
+
+    /**
+     * Restore the trigger policy from the state that was earlier checkpointed by the framework.
+     *
+     * @param state the state
+     */
+    void restoreState(S state);
 }

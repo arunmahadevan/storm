@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,12 +22,8 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import org.apache.storm.serialization.KryoTupleDeserializer;
 import org.apache.storm.serialization.KryoTupleSerializer;
-import org.apache.storm.serialization.SerializationFactory;
-import org.apache.storm.spout.CheckPointState;
 import org.apache.storm.task.TopologyContext;
-import org.apache.storm.topology.StatefulWindowedBoltExecutor;
 import org.apache.storm.tuple.TupleImpl;
-import org.apache.storm.windowing.EventImpl;
 import org.objenesis.strategy.StdInstantiatorStrategy;
 
 import java.util.Collections;
@@ -46,7 +42,6 @@ public class DefaultStateSerializer<T> implements Serializer<T> {
     private final ThreadLocal<Kryo> kryo = new ThreadLocal<Kryo>() {
         @Override
         protected Kryo initialValue() {
-            //            Kryo obj = topoConf.isEmpty() ? new Kryo() : SerializationFactory.getKryo(topoConf);
             Kryo obj = new Kryo();
             if (context != null && topoConf != null) {
                 KryoTupleSerializer ser = new KryoTupleSerializer(topoConf, context);
@@ -67,7 +62,13 @@ public class DefaultStateSerializer<T> implements Serializer<T> {
         }
     };
 
-    public DefaultStateSerializer(TopologyContext context, Map<String, Object> topoConf, List<Class<?>> classesToRegister) {
+    /**
+     * Constructs a {@link DefaultStateSerializer} instance with the given list
+     * of classes registered in kryo.
+     *
+     * @param classesToRegister the classes to register.
+     */
+    public DefaultStateSerializer(Map<String, Object> topoConf, TopologyContext context, List<Class<?>> classesToRegister) {
         this.context = context;
         this.topoConf = topoConf;
         for (Class<?> klazz : classesToRegister) {
@@ -75,26 +76,12 @@ public class DefaultStateSerializer<T> implements Serializer<T> {
         }
     }
 
-//    /**
-//     * Constructs a {@link DefaultStateSerializer} instance with the given list
-//     * of classes registered in kryo.
-//     *
-//     * @param classesToRegister the classes to register.
-//     */
-//    public DefaultStateSerializer(Map<String, Object> topoConf, List<Class<?>> classesToRegister) {
-//        this.topoConf = topoConf;
-//        for (Class<?> klazz : classesToRegister) {
-//            kryo.get().register(klazz);
-//        }
-//        this(null, topoConf, classesToRegister);
-//    }
-
-    public DefaultStateSerializer(TopologyContext context, Map<String, Object> topoConf) {
-        this(context, topoConf, Collections.<Class<?>>emptyList());
+    public DefaultStateSerializer(Map<String, Object> topoConf, TopologyContext context) {
+        this(topoConf, context, Collections.emptyList());
     }
 
     public DefaultStateSerializer() {
-        this(null, Collections.emptyMap());
+        this(Collections.emptyMap(), null);
     }
 
     @Override
@@ -110,9 +97,9 @@ public class DefaultStateSerializer<T> implements Serializer<T> {
         return (T) kryo.get().readClassAndObject(input);
     }
 
-    static class TupleSerializer extends com.esotericsoftware.kryo.Serializer<TupleImpl> {
-        KryoTupleSerializer tupleSerializer;
-        KryoTupleDeserializer tupleDeserializer;
+    private static class TupleSerializer extends com.esotericsoftware.kryo.Serializer<TupleImpl> {
+        private final KryoTupleSerializer tupleSerializer;
+        private final KryoTupleDeserializer tupleDeserializer;
 
         TupleSerializer(KryoTupleSerializer tupleSerializer, KryoTupleDeserializer tupleDeserializer) {
             this.tupleSerializer = tupleSerializer;

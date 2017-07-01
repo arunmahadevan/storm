@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Eviction policy that evicts events based on time duration.
  */
-public class TimeEvictionPolicy<T> implements EvictionPolicy<T> {
+public class TimeEvictionPolicy<T> implements EvictionPolicy<T, EvictionContext> {
     private static final Logger LOG = LoggerFactory.getLogger(TimeEvictionPolicy.class);
 
     private final int windowLength;
@@ -91,5 +91,15 @@ public class TimeEvictionPolicy<T> implements EvictionPolicy<T> {
                 "windowLength=" + windowLength +
                 ", evictionContext=" + evictionContext +
                 '}';
+    }
+
+    @Override
+    public EvictionContext getState() {
+        return evictionContext;
+    }
+
+    @Override
+    public void restoreState(EvictionContext state) {
+        this.evictionContext = evictionContext;
     }
 }

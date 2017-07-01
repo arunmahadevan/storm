@@ -17,8 +17,6 @@
  */
 package org.apache.storm.spout;
 
-import java.io.Serializable;
-
 import static org.apache.storm.spout.CheckPointState.State.COMMITTED;
 import static org.apache.storm.spout.CheckPointState.State.COMMITTING;
 import static org.apache.storm.spout.CheckPointState.State.PREPARING;

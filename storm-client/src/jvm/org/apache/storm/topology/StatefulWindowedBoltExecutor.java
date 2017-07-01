@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * <p>
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * <p>
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,31 +17,22 @@
  */
 package org.apache.storm.topology;
 
+import org.apache.storm.Config;
+import org.apache.storm.generated.GlobalStreamId;
 import org.apache.storm.state.KeyValueState;
 import org.apache.storm.state.State;
 import org.apache.storm.state.StateFactory;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
-import org.apache.storm.windowing.Event;
 import org.apache.storm.windowing.WindowLifecycleListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Serializable;
-import java.util.AbstractCollection;
-import java.util.Collections;
-import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static java.util.Collections.emptyIterator;
 
 /**
  * Wraps a {@link IStatefulWindowedBolt} and handles the execution. Saves the last expired
@@ -50,288 +41,332 @@ import static java.util.Collections.emptyIterator;
 public class StatefulWindowedBoltExecutor<T extends State> extends WindowedBoltExecutor implements IStatefulBolt<T> {
     private static final Logger LOG = LoggerFactory.getLogger(StatefulWindowedBoltExecutor.class);
     private final IStatefulWindowedBolt<T> statefulWindowedBolt;
+    private transient String msgIdFieldName;
     private transient TopologyContext topologyContext;
     private transient OutputCollector outputCollector;
-    private transient WindowState<Tuple> state;
+    // last evaluated and last expired message ids per task stream (source taskid + stream-id)
+    private transient KeyValueState<TaskStream, WindowState> streamState;
+    private transient List<Tuple> pendingTuples;
+    // the states to be recovered
+    private transient Map<TaskStream, WindowState> recoveryStates;
     private transient boolean stateInitialized;
     private transient boolean prePrepared;
 
     public StatefulWindowedBoltExecutor(IStatefulWindowedBolt<T> bolt) {
         super(bolt);
-        statefulWindowedBolt = bolt;
+        this.statefulWindowedBolt = bolt;
     }
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
-        prepare(topoConf, context, collector, getWindowState(topoConf, context), getPartitionState(topoConf, context));
+        prepare(topoConf, context, collector, getWindowState(topoConf, context));
     }
 
     // package access for unit tests
     void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector,
-                 KeyValueState<Long, WindowPartition<Tuple>> windowState, KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState) {
-        init(topoConf, context, collector, windowState, partitionState);
-        doPrepare(topoConf, context, collector, state);
+                 KeyValueState<TaskStream, WindowState> windowState) {
+        init(topoConf, context, collector, windowState);
+        super.prepare(topoConf, context, collector);
     }
 
     private void init(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector,
-                      KeyValueState<Long, WindowPartition<Tuple>> windowState, KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState) {
+                      KeyValueState<TaskStream, WindowState> windowState) {
+        if (topoConf.containsKey(Config.TOPOLOGY_BOLTS_MESSAGE_ID_FIELD_NAME)) {
+            msgIdFieldName = (String) topoConf.get(Config.TOPOLOGY_BOLTS_MESSAGE_ID_FIELD_NAME);
+        } else {
+            throw new IllegalArgumentException(Config.TOPOLOGY_BOLTS_MESSAGE_ID_FIELD_NAME + " is not set");
+        }
         topologyContext = context;
         outputCollector = collector;
-        state = new WindowState<>(windowState, partitionState);
+        streamState = windowState;
+        pendingTuples = new ArrayList<>();
+        recoveryStates = new HashMap<>();
+        stateInitialized = false;
+        prePrepared = false;
     }
 
     @Override
     public void execute(Tuple input) {
-        if (!stateInitialized) {
+        if (!isStateInitialized()) {
             throw new IllegalStateException("execute invoked before initState with input tuple " + input);
+        } else if (isRecovering()) {
+            handleRecovery(input);
+        } else {
+            super.execute(input);
         }
-        super.execute(input);
-        // StatefulBoltExecutor handles the final ack when the state is saved
-        outputCollector.ack(input);
+    }
+
+    @Override
+    protected void start() {
+        if (!isStateInitialized() || isRecovering()) {
+            LOG.debug("Will invoke start after recovery is complete.");
+        } else {
+            super.start();
+        }
+    }
+
+    private void handleRecovery(Tuple input) {
+        long msgId = getMsgId(input);
+        TaskStream taskStream = TaskStream.fromTuple(input);
+        WindowState state = recoveryStates.get(taskStream);
+        LOG.debug("handleRecovery, recoveryStates {}", recoveryStates);
+        if (state != null) {
+            LOG.debug("Tuple msgid {}, saved state {}", msgId, state);
+            if (msgId <= state.lastExpired) {
+                LOG.debug("Ignoring tuple since msg id {} <= lastExpired id {}", msgId, state.lastExpired);
+                outputCollector.ack(input);
+            } else if (msgId <= state.lastEvaluated) {
+                super.execute(input);
+            } else {
+                LOG.debug("Tuple msg id {} > lastEvaluated id {}, adding to pendingTuples and clearing recovery state " +
+                                  "for taskStream {}", msgId, state.lastEvaluated, taskStream);
+                pendingTuples.add(input);
+                clearRecoveryState(taskStream);
+            }
+        } else {
+            pendingTuples.add(input);
+        }
+    }
+
+    private void clearRecoveryState(TaskStream stream) {
+        recoveryStates.remove(stream);
+        if (!isRecovering()) {
+            super.start();
+            LOG.debug("Recovery complete, processing {} pending tuples", pendingTuples.size());
+            for (Tuple tuple : pendingTuples) {
+                super.execute(tuple);
+            }
+        }
+    }
+
+    private boolean isRecovering() {
+        return !recoveryStates.isEmpty();
+    }
+
+    private boolean isStateInitialized() {
+        return stateInitialized;
     }
 
     @Override
     public void initState(T state) {
         if (stateInitialized) {
             LOG.warn("State is already initialized. Ignoring initState");
-        } else {
-            statefulWindowedBolt.initState(state);
-            stateInitialized = true;
-            start();
+            return;
         }
+        statefulWindowedBolt.initState((T) state);
+        // query the streamState for each input task stream and compute recoveryStates
+        for (GlobalStreamId streamId : topologyContext.getThisSources().keySet()) {
+            for (int taskId : topologyContext.getComponentTasks(streamId.get_componentId())) {
+                WindowState windowState = streamState.get(new TaskStream(taskId, streamId));
+                if (windowState != null) {
+                    recoveryStates.put(new TaskStream(taskId, streamId), windowState);
+                }
+            }
+        }
+        LOG.debug("recoveryStates {}", recoveryStates);
+        stateInitialized = true;
+        start();
     }
 
     @Override
     public void preCommit(long txid) {
-        if (prePrepared) {
+        if (!isStateInitialized() || (!isRecovering() && prePrepared)) {
             LOG.debug("Commit streamState, txid {}", txid);
-            state.commit(txid);
+            streamState.commit(txid);
         } else {
-            LOG.debug("Ignoring preCommit and not committing streamState.");
+            LOG.debug("Still recovering, ignoring preCommit and not committing streamState.");
         }
     }
 
     @Override
     public void prePrepare(long txid) {
-        if (stateInitialized) {
+        if (!isStateInitialized()) {
+            LOG.warn("Cannot prepare before initState");
+        } else if (!isRecovering()) {
             LOG.debug("Prepare streamState, txid {}", txid);
-            state.prepareCommit(txid);
+            streamState.prepareCommit(txid);
             prePrepared = true;
         } else {
-            LOG.warn("Cannot prepare before initState");
+            LOG.debug("Still recovering, ignoring prePrepare and not preparing streamState.");
         }
     }
 
     @Override
     public void preRollback() {
         LOG.debug("Rollback streamState, stateInitialized {}", stateInitialized);
-        state.rollback();
+        streamState.rollback();
     }
 
     @Override
     protected WindowLifecycleListener<Tuple> newWindowLifecycleListener() {
+        final WindowLifecycleListener<Tuple> parentListener = super.newWindowLifecycleListener();
         return new WindowLifecycleListener<Tuple>() {
             @Override
             public void onExpiry(List<Tuple> events) {
-                /*
-                 * NO-OP: the events should have been already acked in execute
-                 * and removed from the state by WindowManager.scanEvents
-                 */
+                parentListener.onExpiry(events);
             }
 
             @Override
             public void onActivation(List<Tuple> events, List<Tuple> newEvents, List<Tuple> expired, Long timestamp) {
-                /*
-                 * Here we emit without anchoring since the tuples in window are acked after the
-                 * checkpoint barrier is received and the window state is check-pointed.
-                 */
-                boltExecute(events, newEvents, expired, timestamp);
+                if (isRecovering()) {
+                    String msg = String.format("Unexpected activation with events %s, newEvents %s, expired %s in recovering state. " +
+                                                       "recoveryStates %s ", events, newEvents, expired, recoveryStates);
+                    LOG.error(msg);
+                    throw new IllegalStateException(msg);
+                } else {
+                    parentListener.onActivation(events, newEvents, expired, timestamp);
+                    updateWindowState(expired, newEvents);
+                }
             }
         };
     }
 
-    private KeyValueState<Long, WindowPartition<Tuple>> getWindowState(Map<String, Object> topoConf, TopologyContext context) {
-        String namespace = context.getThisComponentId() + "-" + context.getThisTaskId() + "-window";
-        return (KeyValueState<Long, WindowPartition<Tuple>>) StateFactory.getState(namespace, topoConf, context);
+    private void updateWindowState(List<Tuple> expired, List<Tuple> newEvents) {
+        LOG.debug("Update window state, {} expired, {} new events", expired.size(), newEvents.size());
+        Map<TaskStream, WindowState> state = new HashMap<>();
+        updateState(state, expired, false);
+        updateState(state, newEvents, true);
+        updateStreamState(state);
     }
 
-    private KeyValueState<String, ConcurrentLinkedDeque<Long>> getPartitionState(Map<String, Object> topoConf, TopologyContext context) {
-        String namespace = context.getThisComponentId() + "-" + context.getThisTaskId() + "-window-partitions";
-        return (KeyValueState<String, ConcurrentLinkedDeque<Long>>) StateFactory.getState(namespace, topoConf, context);
-    }
-
-    private static class WindowState<T> extends AbstractCollection<Event<T>> {
-        private static final int PARTITION_SZ = 1000;
-        private static final String PARTITION_KEY = "partition-key";
-        private final KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState;
-        private final KeyValueState<Long, WindowPartition<T>> keyValueState;
-        private ConcurrentLinkedDeque<Long> partitionIds;
-        private long curId;
-        private WindowPartition<T> curPartition;
-        private final Set<WindowPartition<T>> modified = Collections.newSetFromMap(new ConcurrentHashMap<>());
-
-        WindowState(KeyValueState<Long, WindowPartition<T>> keyValueState, KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState) {
-            this.keyValueState = keyValueState;
-            this.partitionState = partitionState;
-            initCurPartitions();
+    private void updateState(Map<TaskStream, WindowState> state, List<Tuple> tuples, boolean newEvents) {
+        for (Tuple tuple : tuples) {
+            TaskStream taskStream = TaskStream.fromTuple(tuple);
+            WindowState curState = state.get(taskStream);
+            WindowState newState;
+            if ((newState = getUpdatedState(curState, getMsgId(tuple), newEvents)) != null) {
+                state.put(taskStream, newState);
+            }
         }
+    }
 
-        private void initCurPartitions() {
-            partitionIds = partitionState.get(PARTITION_KEY, new ConcurrentLinkedDeque<>());
-            if (partitionIds.isEmpty()) {
-                partitionIds.add(curId);
-                partitionState.put(PARTITION_KEY, partitionIds);
+    // update streamState based on stateUpdates
+    private void updateStreamState(Map<TaskStream, WindowState> state) {
+        for (Map.Entry<TaskStream, WindowState> entry : state.entrySet()) {
+            TaskStream taskStream = entry.getKey();
+            WindowState newState = entry.getValue();
+            WindowState curState = streamState.get(taskStream);
+            if (curState == null) {
+                streamState.put(taskStream, newState);
             } else {
-                curId = partitionIds.peekLast();
+                WindowState updatedState = new WindowState(Math.max(newState.lastExpired, curState.lastExpired),
+                                                           Math.max(newState.lastEvaluated, curState.lastEvaluated));
+                LOG.debug("Update window state, taskStream {}, curState {}, newState {}", taskStream, curState, updatedState);
+                streamState.put(taskStream, updatedState);
             }
-            curPartition = keyValueState.get(curId, new WindowPartition<>(curId));
-        }
-
-        @Override
-        public Iterator<Event<T>> iterator() {
-
-            return new Iterator<Event<T>>() {
-                private Iterator<Long> ids = partitionIds.iterator();
-                private Iterator<Event<T>> current = emptyIterator();
-                private Iterator<Event<T>> removeFrom;
-                private long curIterId;
-                private WindowPartition<T> curIterPartition;
-
-                @Override
-                public void remove() {
-                    if (removeFrom == null) {
-                        throw new IllegalStateException("No calls to next() since last call to remove()");
-                    }
-                    removeFrom.remove();
-                    removeFrom = null;
-                    modified.add(curIterPartition);
-                }
-
-                @Override
-                public boolean hasNext() {
-                    boolean curHasNext = current.hasNext();
-                    while (!curHasNext && ids.hasNext()) {
-                        curIterId = ids.next();
-                        curIterPartition = keyValueState.get(curIterId);
-                        if (curIterPartition != null) {
-                            current = curIterPartition.iterator();
-                            curHasNext = current.hasNext();
-                        }
-                    }
-                    return curHasNext;
-                }
-
-                @Override
-                public Event<T> next() {
-                    if (!hasNext()) {
-                        throw new NoSuchElementException();
-                    }
-                    removeFrom = current;
-                    return current.next();
-                }
-            };
-        }
-
-        @Override
-        public boolean add(Event<T> event) {
-            if (curPartition.size() >= PARTITION_SZ) {
-                keyValueState.put(curId, curPartition);
-                curId++;
-                curPartition = new WindowPartition<>(curId);
-                partitionIds.add(curId);
-                partitionState.put(PARTITION_KEY, partitionIds);
-            }
-            curPartition.add(event);
-            return true;
-        }
-
-        private void flush() {
-            Iterator<WindowPartition<T>> it = modified.iterator();
-            while (it.hasNext()) {
-                WindowPartition<T> p = it.next();
-                it.remove();
-                if (p.isEmpty()) {
-                    keyValueState.delete(p.getId());
-                    partitionIds.remove(p.getId());
-                } else {
-                    keyValueState.put(p.getId(), p);
-                }
-            }
-            partitionState.put(PARTITION_KEY, partitionIds);
-            keyValueState.put(curId, curPartition);
-        }
-
-        void prepareCommit(long txid) {
-            flush();
-            partitionState.prepareCommit(txid);
-            keyValueState.prepareCommit(txid);
-        }
-
-        void commit(long txid) {
-            flush();
-            partitionState.commit(txid);
-            keyValueState.commit(txid);
-        }
-
-        void rollback() {
-            flush();
-            partitionState.rollback();
-            keyValueState.rollback();
-        }
-
-        @Override
-        public int size() {
-            throw new UnsupportedOperationException();
         }
     }
 
-    public static class WindowPartition<T> implements Iterable<Event<T>> {
-        private final ConcurrentLinkedQueue<Event<T>> events = new ConcurrentLinkedQueue<>();
-        private final AtomicInteger size = new AtomicInteger();
-        private final long id;
+    private WindowState getUpdatedState(WindowState state, long msgId, boolean newEvents) {
+        WindowState result = null;
+        if (newEvents) {
+            if (state == null) {
+                result = new WindowState(Long.MIN_VALUE, msgId);
+            } else if (msgId > state.lastEvaluated) {
+                result = new WindowState(state.lastExpired, msgId);
+            }
+        } else {
+            if (state == null) {
+                result = new WindowState(msgId, Long.MIN_VALUE);
+            } else if (msgId > state.lastExpired) {
+                result = new WindowState(msgId, state.lastEvaluated);
+            }
+        }
+        return result;
+    }
 
-        public WindowPartition(long id) {
-            this.id = id;
+    private long getMsgId(Tuple input) {
+        return input.getLongByField(msgIdFieldName);
+    }
+
+    private KeyValueState<TaskStream, WindowState> getWindowState(Map<String, Object> topoConf, TopologyContext context) {
+        String namespace = context.getThisComponentId() + "-" + context.getThisTaskId() + "-window";
+        return (KeyValueState<TaskStream, WindowState>) StateFactory.getState(namespace, topoConf, context);
+    }
+
+    static class WindowState {
+        private long lastExpired;
+        private long lastEvaluated;
+
+        // for kryo
+        WindowState() {
         }
 
-        void add(Event<T> event) {
-            events.add(event);
-            size.incrementAndGet();
-        }
-
-        boolean isEmpty() {
-            return events.isEmpty();
+        WindowState(long lastExpired, long lastEvaluated) {
+            this.lastExpired = lastExpired;
+            this.lastEvaluated = lastEvaluated;
         }
 
         @Override
-        public Iterator<Event<T>> iterator() {
-            return new Iterator<Event<T>>() {
-                Iterator<Event<T>> it = events.iterator();
-                @Override
-                public boolean hasNext() {
-                    return it.hasNext();
-                }
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
 
-                @Override
-                public Event<T> next() {
-                    return it.next();
-                }
+            WindowState that = (WindowState) o;
 
-                @Override
-                public void remove() {
-                    it.remove();
-                    size.decrementAndGet();
-                }
-            };
+            if (lastExpired != that.lastExpired) return false;
+            return lastEvaluated == that.lastEvaluated;
+
         }
 
-        public int size() {
-            return size.get();
+        @Override
+        public int hashCode() {
+            int result = (int) (lastExpired ^ (lastExpired >>> 32));
+            result = 31 * result + (int) (lastEvaluated ^ (lastEvaluated >>> 32));
+            return result;
         }
 
-        public long getId() {
-            return id;
+        @Override
+        public String toString() {
+            return "WindowState{" +
+                    "lastExpired=" + lastExpired +
+                    ", lastEvaluated=" + lastEvaluated +
+                    '}';
         }
     }
 
+    static class TaskStream {
+        private int sourceTask;
+        private GlobalStreamId streamId;
+
+        // for kryo
+        TaskStream() {
+        }
+
+        TaskStream(int sourceTask, GlobalStreamId streamId) {
+            this.sourceTask = sourceTask;
+            this.streamId = streamId;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            TaskStream that = (TaskStream) o;
+
+            if (sourceTask != that.sourceTask) return false;
+            return streamId != null ? streamId.equals(that.streamId) : that.streamId == null;
+
+        }
+
+        @Override
+        public int hashCode() {
+            int result = streamId != null ? streamId.hashCode() : 0;
+            result = 31 * result + sourceTask;
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "TaskStream{" +
+                    "sourceTask=" + sourceTask +
+                    ", streamId=" + streamId +
+                    '}';
+        }
+
+        static TaskStream fromTuple(Tuple input) {
+            return new TaskStream(input.getSourceTask(), input.getSourceGlobalStreamId());
+        }
+    }
 }

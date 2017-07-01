@@ -20,8 +20,6 @@ package org.apache.storm.state;
 
 import com.google.common.base.Optional;
 
-import java.util.Collections;
-
 /**
  * Default state encoder class for encoding/decoding key values. This class assumes encoded types of key and value are
  * both binary (byte array) due to keep backward compatibility.

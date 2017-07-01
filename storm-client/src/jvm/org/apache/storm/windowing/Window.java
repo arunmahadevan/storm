@@ -17,6 +17,7 @@
  */
 package org.apache.storm.windowing;
 
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -38,6 +39,15 @@ public interface Window<T> {
      * @return the list of newly added events in the window.
      */
     List<T> getNew();
+
+    /**
+     * Returns an iterator over the events in the window.
+     *
+     * @return an {@link Iterator<T>} over the events in the current window.
+     */
+    default Iterator<T> getIter() {
+        throw new UnsupportedOperationException("Not implemented");
+    }
 
     /**
      * Get the list of events expired from the window since the last time the window was generated.

@@ -81,4 +81,14 @@ public class WatermarkTimeEvictionPolicy<T> extends TimeEvictionPolicy<T> {
                 "lag=" + lag +
                 "} " + super.toString();
     }
+
+    @Override
+    public EvictionContext getState() {
+        return evictionContext;
+    }
+
+    @Override
+    public void restoreState(EvictionContext state) {
+        evictionContext = state;
+    }
 }

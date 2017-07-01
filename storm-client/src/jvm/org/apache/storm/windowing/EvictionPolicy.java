@@ -23,7 +23,7 @@ package org.apache.storm.windowing;
  *
  * @param <T> the type of event that is tracked.
  */
-public interface EvictionPolicy<T> {
+public interface EvictionPolicy<T, S> {
     /**
      * The action to be taken when {@link EvictionPolicy#evict(Event)} is invoked.
      */
@@ -79,4 +79,18 @@ public interface EvictionPolicy<T> {
      */
     EvictionContext getContext();
 
+    /**
+     * Return runtime state to be checkpointed by the framework for restoring the eviction policy
+     * in case of failures.
+     *
+     * @return the state
+     */
+    S getState();
+
+    /**
+     * Restore the eviction policy from the state that was earlier checkpointed by the framework.
+     *
+     * @param state the state
+     */
+    void restoreState(S state);
 }

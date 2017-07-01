@@ -23,8 +23,6 @@ import org.apache.storm.generated.StormTopology;
 import org.apache.storm.serialization.types.ArrayListSerializer;
 import org.apache.storm.serialization.types.HashMapSerializer;
 import org.apache.storm.serialization.types.HashSetSerializer;
-import org.apache.storm.spout.CheckPointState;
-import org.apache.storm.topology.StatefulWindowedBoltExecutor;
 import org.apache.storm.transactional.TransactionAttempt;
 import org.apache.storm.trident.tuple.ConsList;
 import org.apache.storm.tuple.Values;
@@ -43,9 +41,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.TreeMap;
-
-import org.apache.storm.windowing.Event;
-import org.apache.storm.windowing.EventImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,10 +72,7 @@ public class SerializationFactory {
         k.register(org.apache.storm.metric.api.IMetricsConsumer.DataPoint.class);
         k.register(org.apache.storm.metric.api.IMetricsConsumer.TaskInfo.class);
         k.register(ConsList.class);
-        k.register(CheckPointState.class);
-        k.register(StatefulWindowedBoltExecutor.WindowPartition.class);
-        k.register(EventImpl.class);
-
+        
         synchronized (loader) {
             for (SerializationRegister sr: loader) {
                 try {

@@ -17,6 +17,7 @@
  */
 package org.apache.storm.windowing;
 
+import com.google.common.collect.ImmutableMap;
 import org.apache.storm.windowing.EvictionPolicy.Action;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,10 +27,13 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 import static org.apache.storm.windowing.EvictionPolicy.Action.EXPIRE;
 import static org.apache.storm.windowing.EvictionPolicy.Action.PROCESS;
@@ -43,6 +47,8 @@ import static org.apache.storm.windowing.EvictionPolicy.Action.STOP;
  */
 public class WindowManager<T> implements TriggerHandler {
     private static final Logger LOG = LoggerFactory.getLogger(WindowManager.class);
+    private static final String EVICTION_STATE_KEY = "es";
+    private static final String TRIGGER_STATE_KEY = "ts";
 
     /**
      * Expire old events every EXPIRE_EVENTS_THRESHOLD to
@@ -59,27 +65,29 @@ public class WindowManager<T> implements TriggerHandler {
     private final Set<Event<T>> prevWindowEvents;
     private final AtomicInteger eventsSinceLastExpiry;
     private final ReentrantLock lock;
-    private EvictionPolicy<T> evictionPolicy;
-    private TriggerPolicy<T> triggerPolicy;
-
+    private final boolean stateful;
+    private EvictionPolicy<T, ?> evictionPolicy;
+    private TriggerPolicy<T, ?> triggerPolicy;
     public WindowManager(WindowLifecycleListener<T> lifecycleListener) {
-        this(lifecycleListener, new ConcurrentLinkedQueue<>());
+        this(lifecycleListener, new ConcurrentLinkedQueue<>(), false);
     }
 
-    public WindowManager(WindowLifecycleListener<T> lifecycleListener, Collection<Event<T>> queue) {
+    public WindowManager(WindowLifecycleListener<T> lifecycleListener, Collection<Event<T>> queue, boolean stateful) {
         windowLifecycleListener = lifecycleListener;
         this.queue = queue;
+        this.stateful = stateful;
         expiredEvents = new ArrayList<>();
         prevWindowEvents = new HashSet<>();
         eventsSinceLastExpiry = new AtomicInteger();
         lock = new ReentrantLock(true);
+
     }
 
-    public void setEvictionPolicy(EvictionPolicy<T> evictionPolicy) {
+    public void setEvictionPolicy(EvictionPolicy<T, ?> evictionPolicy) {
         this.evictionPolicy = evictionPolicy;
     }
 
-    public void setTriggerPolicy(TriggerPolicy<T> triggerPolicy) {
+    public void setTriggerPolicy(TriggerPolicy<T, ?> triggerPolicy) {
         this.triggerPolicy = triggerPolicy;
     }
 
@@ -116,7 +124,9 @@ public class WindowManager<T> implements TriggerHandler {
             LOG.debug("Got watermark event with ts {}", windowEvent.getTimestamp());
         }
         track(windowEvent);
-        compactWindow();
+        if (!stateful) {
+            compactWindow();
+        }
     }
 
     /**
@@ -124,6 +134,23 @@ public class WindowManager<T> implements TriggerHandler {
      */
     @Override
     public boolean onTrigger() {
+        return stateful ? doOnTriggerStateful() : doOnTrigger();
+    }
+
+    private boolean doOnTriggerStateful() {
+        Supplier<Iterator<T>> it = this::scanEventsStateful; // TODO: check watermark count eviction
+        boolean hasEvents = it.get().hasNext();
+        if (hasEvents) {
+            LOG.debug("invoking windowLifecycleListener onActivation with iterator");
+            windowLifecycleListener.onActivation(it, null, null, evictionPolicy.getContext().getReferenceTime());
+        } else {
+            LOG.debug("No events in the window, skipping onActivation");
+        }
+        triggerPolicy.reset();
+        return hasEvents;
+    }
+
+    private boolean doOnTrigger() {
         List<Event<T>> windowEvents = null;
         List<T> expired = null;
         try {
@@ -183,6 +210,44 @@ public class WindowManager<T> implements TriggerHandler {
     private void track(Event<T> windowEvent) {
         evictionPolicy.track(windowEvent);
         triggerPolicy.track(windowEvent);
+    }
+
+    private Iterator<T> scanEventsStateful() {
+        LOG.debug("Scan events, eviction policy {}", evictionPolicy);
+        Iterator<T> it = new Iterator<T>() {
+            private Iterator<Event<T>> inner = queue.iterator();
+            private T windowEvent;
+            private boolean stopped;
+
+            @Override
+            public boolean hasNext() {
+                while (!stopped && windowEvent == null && inner.hasNext()) {
+                    Event<T> cur = inner.next();
+                    Action action = evictionPolicy.evict(cur);
+                    if (action == EXPIRE) {
+                        inner.remove();
+                    } else if (action == STOP) {
+                        stopped = true;
+                    } else if (action == PROCESS) {
+                        windowEvent = cur.get();
+                    }
+                }
+                return windowEvent != null;
+            }
+
+            @Override
+            public T next() {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+                T res = windowEvent;
+                windowEvent = null;
+                return res;
+            }
+        };
+
+        return it;
+
     }
 
     /**
@@ -293,5 +358,25 @@ public class WindowManager<T> implements TriggerHandler {
                 "evictionPolicy=" + evictionPolicy +
                 ", triggerPolicy=" + triggerPolicy +
                 '}';
+    }
+
+    public void restoreState(Map<String, ?> state) {
+        if (state != null) {
+            Object val = state.get(EVICTION_STATE_KEY);
+            if (val != null) {
+                ((EvictionPolicy) evictionPolicy).restoreState(val);
+            }
+            val = state.get(TRIGGER_STATE_KEY);
+            if (val != null) {
+                ((TriggerPolicy) triggerPolicy).restoreState(val);
+            }
+        }
+    }
+
+    public Map<String, ?> getState() {
+        return ImmutableMap.of(
+                EVICTION_STATE_KEY, evictionPolicy.getState(),
+                TRIGGER_STATE_KEY, triggerPolicy.getState()
+        );
     }
 }

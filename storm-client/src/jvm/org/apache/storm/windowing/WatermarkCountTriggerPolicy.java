@@ -25,16 +25,16 @@ import java.util.List;
  *
  * @param <T> the type of event tracked by this policy.
  */
-public class WatermarkCountTriggerPolicy<T> implements TriggerPolicy<T> {
+public class WatermarkCountTriggerPolicy<T> implements TriggerPolicy<T, Long> {
     private final int count;
     private final TriggerHandler handler;
-    private final EvictionPolicy<T> evictionPolicy;
+    private final EvictionPolicy<T, ?> evictionPolicy;
     private final WindowManager<T> windowManager;
     private long lastProcessedTs = 0;
     private boolean started;
 
     public WatermarkCountTriggerPolicy(int count, TriggerHandler handler,
-                                       EvictionPolicy<T> evictionPolicy, WindowManager<T> windowManager) {
+                                       EvictionPolicy<T, ?> evictionPolicy, WindowManager<T> windowManager) {
         this.count = count;
         this.handler = handler;
         this.evictionPolicy = evictionPolicy;
@@ -87,5 +87,15 @@ public class WatermarkCountTriggerPolicy<T> implements TriggerPolicy<T> {
                 ", lastProcessedTs=" + lastProcessedTs +
                 ", started=" + started +
                 '}';
+    }
+
+    @Override
+    public Long getState() {
+        return lastProcessedTs;
+    }
+
+    @Override
+    public void restoreState(Long state) {
+        lastProcessedTs = state;
     }
 }
