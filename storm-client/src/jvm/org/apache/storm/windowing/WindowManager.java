@@ -29,6 +29,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -362,21 +363,21 @@ public class WindowManager<T> implements TriggerHandler {
 
     public void restoreState(Map<String, ?> state) {
         if (state != null) {
-            Object val = state.get(EVICTION_STATE_KEY);
-            if (val != null) {
-                ((EvictionPolicy) evictionPolicy).restoreState(val);
+            Optional<?> es = (Optional<?>) state.get(EVICTION_STATE_KEY);
+            if (es != null) {
+                es.ifPresent(v -> ((EvictionPolicy) evictionPolicy).restoreState(v));
             }
-            val = state.get(TRIGGER_STATE_KEY);
-            if (val != null) {
-                ((TriggerPolicy) triggerPolicy).restoreState(val);
+            Optional<?> ts = (Optional<?>) state.get(TRIGGER_STATE_KEY);
+            if (ts != null) {
+                ts.ifPresent(v -> ((TriggerPolicy) triggerPolicy).restoreState(v));
             }
         }
     }
 
     public Map<String, ?> getState() {
         return ImmutableMap.of(
-                EVICTION_STATE_KEY, evictionPolicy.getState(),
-                TRIGGER_STATE_KEY, triggerPolicy.getState()
+                EVICTION_STATE_KEY, Optional.ofNullable(evictionPolicy.getState()),
+                TRIGGER_STATE_KEY, Optional.ofNullable(triggerPolicy.getState())
         );
     }
 }

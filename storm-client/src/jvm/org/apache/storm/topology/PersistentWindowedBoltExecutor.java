@@ -1,3 +1,21 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.storm.topology;
 
 import com.google.common.cache.CacheBuilder;
@@ -5,6 +23,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
+import org.apache.storm.Config;
 import org.apache.storm.state.KeyValueState;
 import org.apache.storm.state.State;
 import org.apache.storm.state.StateFactory;
@@ -12,11 +31,13 @@ import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.windowing.Event;
+import org.apache.storm.windowing.EventImpl;
 import org.apache.storm.windowing.WindowLifecycleListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.AbstractCollection;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -26,6 +47,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import static java.util.Collections.emptyIterator;
@@ -51,9 +73,29 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
 
     @Override
     public void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector) {
-        prepare(topoConf, context, collector, getWindowState(topoConf, context),
-                getPartitionState(topoConf, context),
-                getWindowSystemState(topoConf, context));
+        List<String> registrations = (List<String>) topoConf.getOrDefault(Config.TOPOLOGY_STATE_KRYO_REGISTER, new ArrayList<>());
+        registrations.add(ConcurrentLinkedQueue.class.getName());
+        registrations.add(ConcurrentLinkedDeque.class.getName());
+        registrations.add(AtomicInteger.class.getName());
+        registrations.add(EventImpl.class.getName());
+        registrations.add(WindowPartition.class.getName());
+        topoConf.put(Config.TOPOLOGY_STATE_KRYO_REGISTER, registrations);
+        prepare(topoConf, context, collector,
+            getWindowState(topoConf, context),
+            getPartitionState(topoConf, context),
+            getWindowSystemState(topoConf, context));
+    }
+
+    // package access for unit tests
+    void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector,
+                 KeyValueState<Long, WindowPartition<Tuple>> windowState,
+                 KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState,
+                 KeyValueState<String, Object> windowSystemState) {
+        init(topoConf, context, collector, windowState, partitionState, windowSystemState);
+        doPrepare(topoConf, context, collector, state, true);
+        Map<String, Object> wstate = new HashMap<>();
+        windowSystemState.forEach(s -> wstate.put(s.getKey(), s.getValue()));
+        restoreState(wstate);
     }
 
     @Override
@@ -140,25 +182,14 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
         };
     }
 
-    // package access for unit tests
-    void prepare(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector,
-                 KeyValueState<Long, WindowPartition<Tuple>> windowState,
-                 KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState,
-                 KeyValueState<String, Object> windowSystemState) {
-        init(topoConf, context, collector, windowState, partitionState, windowSystemState);
-        doPrepare(topoConf, context, collector, state, true);
-        Map<String, Object> wstate = new HashMap<>();
-        windowSystemState.forEach(s -> wstate.put(s.getKey(), s.getValue()));
-        restoreState(wstate);
-    }
-
     private void init(Map<String, Object> topoConf, TopologyContext context, OutputCollector collector,
                       KeyValueState<Long, WindowPartition<Tuple>> windowState,
                       KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState,
                       KeyValueState<String, Object> windowSystemState) {
         topologyContext = context;
         outputCollector = collector;
-        state = new WindowState<>(windowState, partitionState, windowSystemState, () -> getState());
+        state = new WindowState<>(windowState, partitionState, windowSystemState, () -> getState(),
+            statefulWindowedBolt.maxEventsInMemory());
     }
 
     private KeyValueState<Long, WindowPartition<Tuple>> getWindowState(Map<String, Object> topoConf, TopologyContext context) {
@@ -178,23 +209,27 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
 
     private static class WindowState<T> extends AbstractCollection<Event<T>> {
         private static final int PARTITION_SZ = 1000;
-        private static final String PARTITION_KEY = "partition-key";
+        private static final String PARTITION_KEY = "pk";
         private final KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState;
         private final KeyValueState<Long, WindowPartition<T>> keyValueState;
         private final KeyValueState<String, Object> windowSystemState;
         private ConcurrentLinkedDeque<Long> partitionIds;
-        private long lastPartitionId;
+        private volatile long latestPartitionId;
         private LoadingCache<Long, WindowPartition<T>> cache;
         private Supplier<Map<String, ?>> windowSystemStateSupplier;
+        private final ReentrantLock partitionLock = new ReentrantLock(true);
+        private final long maxEventsInMemory;
 
         WindowState(KeyValueState<Long, WindowPartition<T>> keyValueState,
                     KeyValueState<String, ConcurrentLinkedDeque<Long>> partitionState,
                     KeyValueState<String, Object> windowSystemState,
-                    Supplier<Map<String, ?>> windowSystemStateSupplier) {
+                    Supplier<Map<String, ?>> windowSystemStateSupplier,
+                    long maxEventsInMemory) {
             this.keyValueState = keyValueState;
             this.partitionState = partitionState;
             this.windowSystemState = windowSystemState;
             this.windowSystemStateSupplier = windowSystemStateSupplier;
+            this.maxEventsInMemory = Math.max(10_000, maxEventsInMemory);
             initPartitions();
             initCache();
         }
@@ -225,7 +260,8 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
                     }
                     removeFrom.remove();
                     removeFrom = null;
-                    // TODO: reload in case the current partition was evicted?
+                    // Reload in case the current partition was evicted while iterating
+                    mayBeCachePartition(curPartition);
                 }
 
                 @Override
@@ -283,51 +319,63 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
                 partitionIds.add(0L);
                 partitionState.put(PARTITION_KEY, partitionIds);
             } else {
-                lastPartitionId = partitionIds.peekLast();
+                latestPartitionId = partitionIds.peekLast();
             }
         }
 
         private void initCache() {
+            long size = maxEventsInMemory / PARTITION_SZ;
             cache = CacheBuilder.newBuilder()
-                    .maximumSize(1000) // TODO:
-                    .removalListener(new RemovalListener<Long, WindowPartition<T>>() {
-                        @Override
-                        public void onRemoval(RemovalNotification<Long, WindowPartition<T>> notification) {
-                            LOG.debug("onRemoval for id '{}', WindowPartition '{}'", notification.getKey(), notification.getValue());
-                            Long pid = notification.getKey();
-                            WindowPartition<T> p = notification.getValue();
-                            if (pid == null || p == null) {
-                                return;
-                            }
-                            if (!p.isModified()) {
-                                LOG.debug("WindowPartition '{}' is not modified", p);
-                            } else if (p.isEmpty()) {
-                                deletePartition(pid);
-                            } else {
-                                keyValueState.put(pid, p);
-                            }
+                .maximumSize(size)
+                .removalListener(new RemovalListener<Long, WindowPartition<T>>() {
+                    @Override
+                    public void onRemoval(RemovalNotification<Long, WindowPartition<T>> notification) {
+                        LOG.debug("onRemoval for id '{}', WindowPartition '{}'", notification.getKey(), notification.getValue());
+                        Long pid = notification.getKey();
+                        WindowPartition<T> p = notification.getValue();
+                        if (pid == null || p == null) {
+                            return;
                         }
-                    }).build(new CacheLoader<Long, WindowPartition<T>>() {
-                                 @Override
-                                 public WindowPartition<T> load(Long id) throws Exception {
-                                     // load from state
-                                     return keyValueState.get(id, new WindowPartition<>(id));
-                                 }
+                        if (!p.isModified()) {
+                            LOG.debug("WindowPartition '{}' is not modified", p);
+                        } else if (p.isEmpty() && pid != latestPartitionId) {
+                            deletePartition(pid);
+                        } else {
+                            keyValueState.put(pid, p);
+                        }
+                    }
+                }).build(new CacheLoader<Long, WindowPartition<T>>() {
+                             @Override
+                             public WindowPartition<T> load(Long id) throws Exception {
+                                 LOG.debug("Load partition: {}", id);
+                                 // load from state
+                                 return keyValueState.get(id, new WindowPartition<>(id));
                              }
-                    );
+                         }
+                );
 
+        }
+
+        private void updatePartitionState() {
+            try {
+                partitionLock.lock();
+                partitionState.put(PARTITION_KEY, partitionIds);
+            } finally {
+                partitionLock.unlock();
+            }
         }
 
         private void deletePartition(long pid) {
+            LOG.debug("deletePartition: {}", pid);
             keyValueState.delete(pid);
             partitionIds.remove(pid);
-            partitionState.put(PARTITION_KEY, partitionIds);
+            updatePartitionState();
         }
 
         private long getNextPartitionId() {
-            partitionIds.add(++lastPartitionId);
-            partitionState.put(PARTITION_KEY, partitionIds);
-            return lastPartitionId;
+            partitionIds.add(++latestPartitionId);
+            updatePartitionState();
+            return latestPartitionId;
         }
 
         private WindowPartition<T> getNextPartition() {
@@ -335,7 +383,7 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
         }
 
         private WindowPartition<T> getCurPartition() {
-            return getPartition(lastPartitionId);
+            return getPartition(latestPartitionId);
         }
 
         private WindowPartition<T> getPartition(long id) {
@@ -347,13 +395,20 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
             }
         }
 
+        private void mayBeCachePartition(WindowPartition<T> partition) {
+            if (cache.getIfPresent(partition.getId()) == null) {
+                cache.put(partition.getId(), partition);
+            }
+        }
+
         private void flush() {
             cache.asMap().forEach((pid, p) -> {
                 if (p.isModified()) {
-                    p.clearModified();
-                    if (p.isEmpty()) {
-                        deletePartition(pid);
+                    if (p.isEmpty() && pid != latestPartitionId) {
+                        cache.invalidate(pid);
                     } else {
+                        p.clearModified();
+                        // TODO: lock?
                         keyValueState.put(pid, p);
                     }
                 }
@@ -432,11 +487,7 @@ public class PersistentWindowedBoltExecutor<T extends State> extends WindowedBol
 
         @Override
         public String toString() {
-            return "WindowPartition{" +
-                    "events=" + events +
-                    ", size=" + size +
-                    ", id=" + id +
-                    '}';
+            return "WindowPartition{events=" + events + ", size=" + size + ", id=" + id + '}';
         }
     }
 }

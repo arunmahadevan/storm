@@ -20,17 +20,20 @@ package org.apache.storm.state;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import org.apache.storm.Config;
 import org.apache.storm.serialization.KryoTupleDeserializer;
 import org.apache.storm.serialization.KryoTupleSerializer;
+import org.apache.storm.serialization.SerializationFactory;
 import org.apache.storm.task.TopologyContext;
 import org.apache.storm.tuple.TupleImpl;
 import org.objenesis.strategy.StdInstantiatorStrategy;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * A default implementation that uses Kryo to serialize and de-serialize
@@ -39,6 +42,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class DefaultStateSerializer<T> implements Serializer<T> {
     private final TopologyContext context;
     private final Map<String, Object> topoConf;
+    private final List<String> registrations = new ArrayList<>();
+
     private final ThreadLocal<Kryo> kryo = new ThreadLocal<Kryo>() {
         @Override
         protected Kryo initialValue() {
@@ -48,8 +53,9 @@ public class DefaultStateSerializer<T> implements Serializer<T> {
                 KryoTupleDeserializer deser = new KryoTupleDeserializer(topoConf, context);
                 obj.register(TupleImpl.class, new TupleSerializer(ser, deser));
             }
-            obj.register(ConcurrentLinkedDeque.class);
-            obj.register(ConcurrentLinkedQueue.class);
+            if (!registrations.isEmpty()) {
+                SerializationFactory.register(obj, registrations);
+            }
             obj.setInstantiatorStrategy(new Kryo.DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
             return obj;
         }
@@ -71,9 +77,11 @@ public class DefaultStateSerializer<T> implements Serializer<T> {
     public DefaultStateSerializer(Map<String, Object> topoConf, TopologyContext context, List<Class<?>> classesToRegister) {
         this.context = context;
         this.topoConf = topoConf;
-        for (Class<?> klazz : classesToRegister) {
-            kryo.get().register(klazz);
-        }
+        registrations.addAll(classesToRegister.stream().map(Class::getName).collect(Collectors.toSet()));
+        // other classes from config
+        registrations.addAll((List<String>) topoConf.getOrDefault(Config.TOPOLOGY_STATE_KRYO_REGISTER, Collections.emptyList()));
+        // defaults
+        registrations.add(Optional.class.getName());
     }
 
     public DefaultStateSerializer(Map<String, Object> topoConf, TopologyContext context) {

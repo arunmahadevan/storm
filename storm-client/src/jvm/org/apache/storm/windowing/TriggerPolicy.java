@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.storm.windowing;
 
 /**
@@ -31,7 +32,7 @@ public interface TriggerPolicy<T, S> {
     void track(Event<T> event);
 
     /**
-     * resets the trigger policy
+     * resets the trigger policy.
      */
     void reset();
 

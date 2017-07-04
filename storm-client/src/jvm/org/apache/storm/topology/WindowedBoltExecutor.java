@@ -20,7 +20,6 @@ package org.apache.storm.topology;
 import org.apache.storm.Config;
 import org.apache.storm.generated.GlobalStreamId;
 import org.apache.storm.spout.CheckpointSpout;
-import org.apache.storm.streams.Pair;
 import org.apache.storm.task.IOutputCollector;
 import org.apache.storm.task.OutputCollector;
 import org.apache.storm.task.TopologyContext;

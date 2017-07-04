@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.storm.windowing;
 
 /**
@@ -29,24 +30,25 @@ public interface EvictionPolicy<T, S> {
      */
     public enum Action {
         /**
-         * expire the event and remove it from the queue
+         * expire the event and remove it from the queue.
          */
         EXPIRE,
         /**
-         * process the event in the current window of events
+         * process the event in the current window of events.
          */
         PROCESS,
         /**
          * don't include in the current window but keep the event
-         * in the queue for evaluating as a part of future windows
+         * in the queue for evaluating as a part of future windows.
          */
         KEEP,
         /**
          * stop processing the queue, there cannot be anymore events
-         * satisfying the eviction policy
+         * satisfying the eviction policy.
          */
         STOP
     }
+
     /**
      * Decides if an event should be expired from the window, processed in the current
      * window or kept for later processing.
@@ -68,12 +70,12 @@ public interface EvictionPolicy<T, S> {
      * Sets a context in the eviction policy that can be used while evicting the events.
      * E.g. For TimeEvictionPolicy, this could be used to set the reference timestamp.
      *
-     * @param context
+     * @param context the eviction context
      */
     void setContext(EvictionContext context);
 
     /**
-     * Returns the current context that is part of this eviction policy
+     * Returns the current context that is part of this eviction policy.
      *
      * @return the eviction context
      */
