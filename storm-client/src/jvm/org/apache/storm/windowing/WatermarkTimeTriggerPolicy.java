@@ -116,15 +116,6 @@ public class WatermarkTimeTriggerPolicy<T> implements TriggerPolicy<T, Long> {
     }
 
     @Override
-    public String toString() {
-        return "WatermarkTimeTriggerPolicy{" +
-                "slidingIntervalMs=" + slidingIntervalMs +
-                ", nextWindowEndTs=" + nextWindowEndTs +
-                ", started=" + started +
-                '}';
-    }
-
-    @Override
     public Long getState() {
         return nextWindowEndTs;
     }
@@ -132,5 +123,14 @@ public class WatermarkTimeTriggerPolicy<T> implements TriggerPolicy<T, Long> {
     @Override
     public void restoreState(Long state) {
         nextWindowEndTs = state;
+    }
+
+    @Override
+    public String toString() {
+        return "WatermarkTimeTriggerPolicy{" +
+            "slidingIntervalMs=" + slidingIntervalMs +
+            ", nextWindowEndTs=" + nextWindowEndTs +
+            ", started=" + started +
+            '}';
     }
 }

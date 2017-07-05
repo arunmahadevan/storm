@@ -47,7 +47,7 @@ public interface WindowLifecycleListener<T> {
 
     /**
      * Called on activation of the window due to the {@link TriggerPolicy}. This is typically invoked when
-     * the window state is huge to be loaded entirely in memory.
+     * the windows are persisted in state and is huge to be loaded entirely in memory.
      *
      * @param eventsIt a supplier of iterator over the list of current events in the window
      * @param newEventsIt a supplier of iterator over the newly added events since the last ativation

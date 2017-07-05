@@ -66,15 +66,6 @@ public class CountTriggerPolicy<T> implements TriggerPolicy<T, Integer> {
     }
 
     @Override
-    public String toString() {
-        return "CountTriggerPolicy{" +
-                "count=" + count +
-                ", currentCount=" + currentCount +
-                ", started=" + started +
-                '}';
-    }
-
-    @Override
     public Integer getState() {
         return currentCount.get();
     }
@@ -82,5 +73,14 @@ public class CountTriggerPolicy<T> implements TriggerPolicy<T, Integer> {
     @Override
     public void restoreState(Integer state) {
         currentCount.set(state);
+    }
+
+    @Override
+    public String toString() {
+        return "CountTriggerPolicy{" +
+            "count=" + count +
+            ", currentCount=" + currentCount +
+            ", started=" + started +
+            '}';
     }
 }

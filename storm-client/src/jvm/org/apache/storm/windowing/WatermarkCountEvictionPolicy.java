@@ -99,9 +99,8 @@ public class WatermarkCountEvictionPolicy<T> implements EvictionPolicy<T, Pair<L
     }
 
     @Override
-    public String toString() {
-        return "WatermarkCountEvictionPolicy{" +
-                "} " + super.toString();
+    public void reset() {
+        processed = 0;
     }
 
     @Override
@@ -113,5 +112,11 @@ public class WatermarkCountEvictionPolicy<T> implements EvictionPolicy<T, Pair<L
     public void restoreState(Pair<Long, Long> state) {
         currentCount.set(state.getFirst());
         processed = state.getSecond();
+    }
+
+    @Override
+    public String toString() {
+        return "WatermarkCountEvictionPolicy{" +
+            "} " + super.toString();
     }
 }

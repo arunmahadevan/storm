@@ -324,6 +324,11 @@ public class WindowedBoltExecutor implements IRichBolt {
         bolt.cleanup();
     }
 
+    // for unit tests
+    WindowManager<Tuple> getWindowManager() {
+        return windowManager;
+    }
+
     @Override
     public void declareOutputFields(OutputFieldsDeclarer declarer) {
         String lateTupleStream = (String) getComponentConfiguration().get(Config.TOPOLOGY_BOLTS_LATE_TUPLE_STREAM);

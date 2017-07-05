@@ -74,9 +74,11 @@ public class RedisKeyValueStateProvider implements StateProvider {
         }
 
         if (jedisPoolConfig != null) {
-            return new RedisKeyValueState(namespace, jedisPoolConfig, getKeySerializer(topoConf, context, config), getValueSerializer(topoConf, context, config));
+            return new RedisKeyValueState(namespace, jedisPoolConfig,
+                getKeySerializer(topoConf, context, config), getValueSerializer(topoConf, context, config));
         } else {
-            return new RedisKeyValueState(namespace, jedisClusterConfig, getKeySerializer(topoConf, context, config), getValueSerializer(topoConf, context, config));
+            return new RedisKeyValueState(namespace, jedisClusterConfig,
+                getKeySerializer(topoConf, context, config), getValueSerializer(topoConf, context, config));
         }
     }
 

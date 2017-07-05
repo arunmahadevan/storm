@@ -82,6 +82,11 @@ public interface EvictionPolicy<T, S> {
     EvictionContext getContext();
 
     /**
+     * Resets the eviction policy.
+     */
+    void reset();
+
+    /**
      * Return runtime state to be checkpointed by the framework for restoring the eviction policy
      * in case of failures.
      *

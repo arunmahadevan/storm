@@ -139,11 +139,28 @@ public class WindowManager<T> implements TriggerHandler {
     }
 
     private boolean doOnTriggerStateful() {
-        Supplier<Iterator<T>> it = this::scanEventsStateful; // TODO: check watermark count eviction
-        boolean hasEvents = it.get().hasNext();
+        Supplier<Iterator<T>> scanEventsStateful = this::scanEventsStateful;
+        Iterator<T> it = scanEventsStateful.get();
+        boolean hasEvents = it.hasNext();
         if (hasEvents) {
             LOG.debug("invoking windowLifecycleListener onActivation with iterator");
-            windowLifecycleListener.onActivation(it, null, null, evictionPolicy.getContext().getReferenceTime());
+            // reuse the retrieved iterator
+            Supplier<Iterator<T>> wrapper = new Supplier<Iterator<T>>() {
+                Iterator<T> initial = it;
+
+                @Override
+                public Iterator<T> get() {
+                    Iterator<T> res;
+                    if (initial != null) {
+                        res = initial;
+                        initial = null;
+                    } else {
+                        res = scanEventsStateful.get();
+                    }
+                    return res;
+                }
+            };
+            windowLifecycleListener.onActivation(wrapper, null, null, evictionPolicy.getContext().getReferenceTime());
         } else {
             LOG.debug("No events in the window, skipping onActivation");
         }
@@ -215,6 +232,7 @@ public class WindowManager<T> implements TriggerHandler {
 
     private Iterator<T> scanEventsStateful() {
         LOG.debug("Scan events, eviction policy {}", evictionPolicy);
+        evictionPolicy.reset();
         Iterator<T> it = new Iterator<T>() {
             private Iterator<Event<T>> inner = queue.iterator();
             private T windowEvent;

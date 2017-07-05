@@ -80,6 +80,11 @@ public class CountEvictionPolicy<T> implements EvictionPolicy<T, Long> {
     }
 
     @Override
+    public void reset() {
+        // NOOP
+    }
+
+    @Override
     public Long getState() {
         return currentCount.get();
     }

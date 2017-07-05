@@ -18,6 +18,11 @@
 
 package org.apache.storm.starter;
 
+import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
+
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.apache.storm.Config;
 import org.apache.storm.StormSubmitter;
 import org.apache.storm.starter.spout.RandomIntegerSpout;
@@ -35,13 +40,6 @@ import org.apache.storm.windowing.TupleWindow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Random;
-import java.util.concurrent.TimeUnit;
-
-import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
-
 /**
  * An example that demonstrates the usage of {@link org.apache.storm.topology.IStatefulWindowedBolt} with window
  * persistence.
@@ -49,10 +47,28 @@ import static org.apache.storm.topology.base.BaseWindowedBolt.Duration;
  * The framework automatically checkpoints the tuples in window along with the bolt's state and restores the same
  * during restarts.
  * </p>
+ *
+ * <p>
+ * This topology uses 'redis' for state persistence, so you should also start a redis instance before deploying.
+ * If you are running in local mode you can just start a redis server locally which will be used for storing the state. The default
+ * RedisKeyValueStateProvider parameters can be overridden by setting "topology.state.provider.config", for e.g.
+ * <pre>
+ * {
+ *   "jedisPoolConfig": {
+ *     "host": "redis-server-host",
+ *     "port": 6379,
+ *     "timeout": 2000,
+ *     "database": 0,
+ *     "password": "xyz"
+ *   }
+ * }
+ * </pre>
+ * </p>
  */
 public class PersistentWindowingTopology {
     private static final Logger LOG = LoggerFactory.getLogger(PersistentWindowingTopology.class);
 
+    // wrapper to hold global and window averages
     private static class Averages {
         private final double global;
         private final double window;
@@ -69,7 +85,7 @@ public class PersistentWindowingTopology {
     }
 
     /**
-     * A bolt that uses stateful persistence to store the windows along with the state.
+     * A bolt that uses stateful persistence to store the windows along with the state (global avg).
      */
     private static class AvgBolt extends BaseStatefulWindowedBolt<KeyValueState<String, Pair<Long, Long>>> {
         private static final String STATE_KEY = "avg";
@@ -92,7 +108,7 @@ public class PersistentWindowingTopology {
 
         @Override
         public void execute(TupleWindow window) {
-            // iterate over the tuples in window
+            // iterate over tuples in the current window
             Iterator<Tuple> it = window.getIter();
             int sum = 0;
             int count = 0;
@@ -101,8 +117,11 @@ public class PersistentWindowingTopology {
                 sum += tuple.getInteger(0);
                 ++count;
             }
+            LOG.debug("Count : {}", count);
             globalAvg = Pair.of(globalAvg._1 + sum, globalAvg._2 + count);
+            // update the value in state
             state.put(STATE_KEY, globalAvg);
+            // emit the averages downstream
             collector.emit(new Values(new Averages((double) globalAvg._1 / globalAvg._2, (double) sum / count)));
         }
 
@@ -112,24 +131,38 @@ public class PersistentWindowingTopology {
         }
     }
 
+
+    /**
+     * Create and deploy the topology.
+     *
+     * @param args args
+     * @throws Exception exception
+     */
     public static void main(String[] args) throws Exception {
         TopologyBuilder builder = new TopologyBuilder();
-        Random rand = new Random();
+
         // generate random numbers
         builder.setSpout("spout", new RandomIntegerSpout());
+
         // emits sliding window and global averages
         builder.setBolt("avgbolt", new AvgBolt()
-                .withWindow(new Duration(5, TimeUnit.SECONDS), new Duration(3, TimeUnit.SECONDS))
-                .withPersistence()
-                .withMaxEventsInMemory(25000)
-            , 1).shuffleGrouping("spout");
+            .withWindow(new Duration(10, TimeUnit.SECONDS), new Duration(2, TimeUnit.SECONDS))
+            // persist the window in state
+            .withPersistence()
+            // max number of events to be cached in memory
+            .withMaxEventsInMemory(25000), 1)
+            .shuffleGrouping("spout");
+
         // print the values to stdout
         builder.setBolt("printer", (x, y) -> System.out.println(x.getValue(0)), 1).shuffleGrouping("avgbolt");
 
         Config conf = new Config();
         conf.setDebug(false);
 
-        // redis for state persistence
+        // checkpoint the state every 5 seconds
+        conf.put(Config.TOPOLOGY_STATE_CHECKPOINT_INTERVAL, 5000);
+
+        // use redis for state persistence
         conf.put(Config.TOPOLOGY_STATE_PROVIDER, "org.apache.storm.redis.state.RedisKeyValueStateProvider");
 
         String topoName = "test";

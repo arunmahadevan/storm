@@ -86,11 +86,8 @@ public class TimeEvictionPolicy<T> implements EvictionPolicy<T, EvictionContext>
     }
 
     @Override
-    public String toString() {
-        return "TimeEvictionPolicy{" +
-                "windowLength=" + windowLength +
-                ", evictionContext=" + evictionContext +
-                '}';
+    public void reset() {
+        // NOOP
     }
 
     @Override
@@ -101,5 +98,13 @@ public class TimeEvictionPolicy<T> implements EvictionPolicy<T, EvictionContext>
     @Override
     public void restoreState(EvictionContext state) {
         this.evictionContext = evictionContext;
+    }
+
+    @Override
+    public String toString() {
+        return "TimeEvictionPolicy{" +
+            "windowLength=" + windowLength +
+            ", evictionContext=" + evictionContext +
+            '}';
     }
 }
