@@ -138,29 +138,65 @@ public class WindowManager<T> implements TriggerHandler {
         return stateful ? doOnTriggerStateful() : doOnTrigger();
     }
 
+    private static class IteratorStatus {
+        private boolean valid = true;
+
+        void invalidate() {
+            valid = false;
+        }
+
+        boolean isValid() {
+            return valid;
+        }
+    }
+
+    private static<T> Iterator<T> expiringIterator(Iterator<T> inner, IteratorStatus status) {
+        return new Iterator<T>() {
+            @Override
+            public boolean hasNext() {
+                if (status.isValid()) {
+                    return inner.hasNext();
+                }
+                throw new IllegalStateException("Stale iterator");
+            }
+
+            @Override
+            public T next() {
+                if (status.isValid()) {
+                    return inner.next();
+                }
+                throw new IllegalStateException("Stale iterator");
+            }
+        };
+    }
+
     private boolean doOnTriggerStateful() {
         Supplier<Iterator<T>> scanEventsStateful = this::scanEventsStateful;
         Iterator<T> it = scanEventsStateful.get();
         boolean hasEvents = it.hasNext();
         if (hasEvents) {
+            final IteratorStatus status = new IteratorStatus();
             LOG.debug("invoking windowLifecycleListener onActivation with iterator");
             // reuse the retrieved iterator
             Supplier<Iterator<T>> wrapper = new Supplier<Iterator<T>>() {
                 Iterator<T> initial = it;
-
                 @Override
                 public Iterator<T> get() {
-                    Iterator<T> res;
-                    if (initial != null) {
-                        res = initial;
-                        initial = null;
-                    } else {
-                        res = scanEventsStateful.get();
+                    if (status.isValid()) {
+                        Iterator<T> res;
+                        if (initial != null) {
+                            res = initial;
+                            initial = null;
+                        } else {
+                            res = scanEventsStateful.get();
+                        }
+                        return expiringIterator(res, status);
                     }
-                    return res;
+                    throw new IllegalStateException("Stale window");
                 }
             };
             windowLifecycleListener.onActivation(wrapper, null, null, evictionPolicy.getContext().getReferenceTime());
+            status.invalidate();
         } else {
             LOG.debug("No events in the window, skipping onActivation");
         }

@@ -108,10 +108,10 @@ public class PersistentWindowingTopology {
 
         @Override
         public void execute(TupleWindow window) {
-            // iterate over tuples in the current window
-            Iterator<Tuple> it = window.getIter();
             int sum = 0;
             int count = 0;
+            // iterate over tuples in the current window
+            Iterator<Tuple> it = window.getIter();
             while (it.hasNext()) {
                 Tuple tuple = it.next();
                 sum += tuple.getInteger(0);

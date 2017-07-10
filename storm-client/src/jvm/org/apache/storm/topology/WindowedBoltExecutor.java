@@ -108,11 +108,31 @@ public class WindowedBoltExecutor implements IRichBolt {
         return maxPending;
     }
 
+    private int getCheckpointIntervalSecs(Map<String, Object> topoConf) {
+        int checkpointInterval = Integer.MAX_VALUE;
+        if (topoConf.get(Config.TOPOLOGY_STATE_CHECKPOINT_INTERVAL) != null) {
+            checkpointInterval = ((Number) topoConf.get(Config.TOPOLOGY_STATE_CHECKPOINT_INTERVAL)).intValue();
+        }
+        return checkpointInterval / 1000;
+    }
+
+    private boolean isPersistent() {
+        return bolt instanceof IStatefulWindowedBolt && ((IStatefulWindowedBolt)bolt).isPersistent();
+    }
+
     private void ensureDurationLessThanTimeout(int duration, int timeout) {
         if (duration > timeout) {
             throw new IllegalArgumentException("Window duration (length + sliding interval) value " + duration +
                                                        " is more than " + Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS +
                                                        " value " + timeout);
+        }
+    }
+
+    private void ensureCheckpointIntervalLessThanTimeout(int interval, int timeout) {
+        if (interval > timeout) {
+            throw new IllegalArgumentException(Config.TOPOLOGY_STATE_CHECKPOINT_INTERVAL + interval +
+                " is more than " + Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS +
+                " value " + timeout);
         }
     }
 
@@ -133,20 +153,24 @@ public class WindowedBoltExecutor implements IRichBolt {
             throw new IllegalArgumentException("Window length is not specified");
         }
 
-        if (windowLengthDuration != null && slidingIntervalDuration != null) {
-            ensureDurationLessThanTimeout(windowLengthDuration.value + slidingIntervalDuration.value, topologyTimeout);
-        } else if (windowLengthDuration != null) {
-            ensureDurationLessThanTimeout(windowLengthDuration.value, topologyTimeout);
-        } else if (slidingIntervalDuration != null) {
-            ensureDurationLessThanTimeout(slidingIntervalDuration.value, topologyTimeout);
-        }
+        if (isPersistent()) {
+            ensureCheckpointIntervalLessThanTimeout(getCheckpointIntervalSecs(topoConf), topologyTimeout);
+        } else {
+            if (windowLengthDuration != null && slidingIntervalDuration != null) {
+                ensureDurationLessThanTimeout(windowLengthDuration.value + slidingIntervalDuration.value, topologyTimeout);
+            } else if (windowLengthDuration != null) {
+                ensureDurationLessThanTimeout(windowLengthDuration.value, topologyTimeout);
+            } else if (slidingIntervalDuration != null) {
+                ensureDurationLessThanTimeout(slidingIntervalDuration.value, topologyTimeout);
+            }
 
-        if (windowLengthCount != null && slidingIntervalCount != null) {
-            ensureCountLessThanMaxPending(windowLengthCount.value + slidingIntervalCount.value, maxSpoutPending);
-        } else if (windowLengthCount != null) {
-            ensureCountLessThanMaxPending(windowLengthCount.value, maxSpoutPending);
-        } else if (slidingIntervalCount != null) {
-            ensureCountLessThanMaxPending(slidingIntervalCount.value, maxSpoutPending);
+            if (windowLengthCount != null && slidingIntervalCount != null) {
+                ensureCountLessThanMaxPending(windowLengthCount.value + slidingIntervalCount.value, maxSpoutPending);
+            } else if (windowLengthCount != null) {
+                ensureCountLessThanMaxPending(windowLengthCount.value, maxSpoutPending);
+            } else if (slidingIntervalCount != null) {
+                ensureCountLessThanMaxPending(slidingIntervalCount.value, maxSpoutPending);
+            }
         }
     }
 

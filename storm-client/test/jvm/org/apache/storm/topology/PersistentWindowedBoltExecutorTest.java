@@ -106,6 +106,7 @@ public class PersistentWindowedBoltExecutorTest {
         tupleTs = System.currentTimeMillis();
         Mockito.when(mockTimestampExtractor.extractTimestamp(Mockito.any())).thenReturn(tupleTs);
         Mockito.when(mockBolt.getTimestampExtractor()).thenReturn(mockTimestampExtractor);
+        Mockito.when(mockBolt.isPersistent()).thenReturn(true);
         mockPartitionState = Mockito.mock(KeyValueState.class);
         mockWindowState = Mockito.mock(KeyValueState.class);
         mockSystemState = Mockito.mock(KeyValueState.class);
@@ -117,6 +118,8 @@ public class PersistentWindowedBoltExecutorTest {
         mockStormConf.put(Config.TOPOLOGY_BOLTS_SLIDING_INTERVAL_COUNT, 5);
         mockStormConf.put(Config.TOPOLOGY_BOLTS_LATE_TUPLE_STREAM, LATE_STREAM);
         mockStormConf.put(Config.TOPOLOGY_BOLTS_WATERMARK_EVENT_INTERVAL_MS, 100_000);
+        mockStormConf.put(Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS, 30);
+        mockStormConf.put(Config.TOPOLOGY_STATE_CHECKPOINT_INTERVAL, 1000);
         Mockito.when(mockPartitionState.get(Mockito.any(), Mockito.any())).then(returnsArgAt(1));
         Mockito.when(mockWindowState.get(Mockito.any(), Mockito.any())).then(returnsArgAt(1));
         Mockito.when(mockSystemState.get(Mockito.any(), Mockito.any())).then(returnsArgAt(1));
@@ -164,17 +167,21 @@ public class PersistentWindowedBoltExecutorTest {
         Mockito.verify(mockOutputCollector, Mockito.times(5)).ack(tupleCaptor.capture());
         Assert.assertArrayEquals(mockTuples.toArray(), tupleCaptor.getAllValues().toArray());
 
+        Mockito.doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
+                TupleWindow window = (TupleWindow) invocation.getArguments()[0];
+                // iterate the tuples
+                Assert.assertEquals(5, window.get().size());
+                // iterating multiple times should produce same events
+                Assert.assertEquals(5, window.get().size());
+                Assert.assertEquals(5, window.get().size());
+                return null;
+            }
+        }).when(mockBolt).execute(Mockito.any());
         // trigger the window
         long activationTs = tupleTs + 1000;
         executor.getWindowManager().add(new WaterMarkEvent<>(activationTs));
-
-        // iterate the tuples
-        Mockito.verify(mockBolt, Mockito.times(1)).execute(tupleWindowCaptor.capture());
-        Assert.assertEquals(5, tupleWindowCaptor.getValue().get().size());
-        // iterating multiple times should produce same events
-        Assert.assertEquals(5, tupleWindowCaptor.getValue().get().size());
-        Assert.assertEquals(5, tupleWindowCaptor.getValue().get().size());
-
         executor.prePrepare(0);
 
         // partition ids
@@ -241,7 +248,7 @@ public class PersistentWindowedBoltExecutorTest {
         long activationTs = tupleTs + 1000;
         executor.getWindowManager().add(new WaterMarkEvent<>(activationTs));
 
-        Mockito.verify(mockBolt, Mockito.times(4000)).execute(tupleWindowCaptor.capture());
+        Mockito.verify(mockBolt, Mockito.times(4000)).execute(Mockito.any());
     }
 
     private List<Tuple> getMockTuples(int count) {
