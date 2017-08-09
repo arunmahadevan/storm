@@ -17,7 +17,10 @@
  */
 package org.apache.storm.hdfs.trident;
 
+import org.apache.commons.io.filefilter.IOFileFilter;
 import org.apache.storm.Config;
+import org.apache.storm.hdfs.common.rotation.MoveFileAction;
+import org.apache.storm.hdfs.common.rotation.RotationAction;
 import org.apache.storm.tuple.Fields;
 import org.apache.commons.io.FileUtils;
 import org.apache.storm.hdfs.trident.format.DelimitedRecordFormat;
@@ -50,6 +53,7 @@ import static org.mockito.Mockito.when;
 public class HdfsStateTest {
 
     private static final String TEST_OUT_DIR = Paths.get(System.getProperty("java.io.tmpdir"), "trident-unit-test").toString();
+    private static final String TEST_MOVE_DIR = Paths.get(System.getProperty("java.io.tmpdir"), "trident-moved").toString();
 
     private static final String FILE_NAME_PREFIX = "hdfs-data-";
     private static final String TEST_TOPOLOGY_NAME = "test-topology";
@@ -81,19 +85,23 @@ public class HdfsStateTest {
     }
 
     private HdfsState createHdfsState() {
+        return createHdfsState(new FileSizeRotationPolicy(5.0f, FileSizeRotationPolicy.Units.MB), null);
+    }
+
+    private HdfsState createHdfsState(FileRotationPolicy rotationPolicy, RotationAction action) {
 
         Fields hdfsFields = new Fields("f1");
 
         RecordFormat recordFormat = new DelimitedRecordFormat().withFields(hdfsFields);
 
-        FileRotationPolicy rotationPolicy = new FileSizeRotationPolicy(5.0f, FileSizeRotationPolicy.Units.MB);
-
-        HdfsState.Options options = new HdfsState.HdfsFileOptions()
+        HdfsState.HdfsFileOptions options = new HdfsState.HdfsFileOptions()
                 .withFileNameFormat(fileNameFormat)
                 .withRecordFormat(recordFormat)
                 .withRotationPolicy(rotationPolicy)
                 .withFsUrl("file://" + TEST_OUT_DIR);
-
+        if (action != null) {
+            options.addRotationAction(action);
+        }
         Map<String, String> conf = new HashMap<>();
         conf.put(Config.TOPOLOGY_NAME, TEST_TOPOLOGY_NAME);
 
@@ -121,6 +129,7 @@ public class HdfsStateTest {
     @Before
     public void setUp() {
         FileUtils.deleteQuietly(new File(TEST_OUT_DIR));
+        FileUtils.deleteQuietly(new File(TEST_MOVE_DIR));
     }
 
 
@@ -156,6 +165,106 @@ public class HdfsStateTest {
         }
         Assert.assertEquals(tupleCount, lines.size());
         Assert.assertEquals(expected, lines);
+    }
+
+    @Test
+    public void testRotationAction() throws Exception {
+        File test_move_dir = new File(TEST_MOVE_DIR);
+        test_move_dir.deleteOnExit();
+        if (!test_move_dir.isDirectory()) {
+            Assert.assertTrue(test_move_dir.mkdir());
+        }
+        HdfsState state = createHdfsState(
+            new FileSizeRotationPolicy(1.0f, FileSizeRotationPolicy.Units.KB),
+            new MoveFileAction().toDestination(TEST_MOVE_DIR));
+        // batch 1 is played with 1000 tuples initially.
+        state.beginCommit(1L);
+        state.updateState(createMockTridentTuples(1000), null);
+        state.commit(1L);
+
+        int replayBatchSize = 25;
+        // replay batch 1
+        state.beginCommit(1L);
+        state.updateState(createMockTridentTuples(replayBatchSize), null);
+        state.commit(1L);
+        state.close();
+
+        // Ensure that the original batch1 is discarded and new one is persisted.
+        List<String> lines = getLinesFromCurrentDataFile();
+        Assert.assertEquals(replayBatchSize, lines.size());
+        List<String> expected = new ArrayList<>();
+        for (int i = 0; i < replayBatchSize; i++) {
+            expected.add("data");
+        }
+        // nothing should have got moved
+        Assert.assertEquals(0, FileUtils.listFiles(test_move_dir, null, true).size());
+        Assert.assertEquals(expected, lines);
+    }
+
+    @Test
+    public void testRotationActionMove() throws Exception {
+        File test_move_dir = new File(TEST_MOVE_DIR);
+        test_move_dir.deleteOnExit();
+        if (!test_move_dir.isDirectory()) {
+            Assert.assertTrue(test_move_dir.mkdir());
+        }
+        HdfsState state = createHdfsState(
+            new FileSizeRotationPolicy(1.0f, FileSizeRotationPolicy.Units.KB),
+            new MoveFileAction().toDestination(TEST_MOVE_DIR));
+        state.beginCommit(1L);
+        state.updateState(createMockTridentTuples(50), null);
+        state.commit(1L);
+
+        // 0 file should have got moved
+        Assert.assertEquals(0, getMovedFiles(test_move_dir).size());
+
+        state.beginCommit(2L);
+        state.updateState(createMockTridentTuples(1000), null);
+        state.commit(2L);
+
+        state.beginCommit(2L);
+        state.updateState(createMockTridentTuples(1000), null);
+        state.commit(2L);
+
+        // 0 file should have got moved
+        Assert.assertEquals(0, getMovedFiles(test_move_dir).size());
+
+        state.beginCommit(3L);
+        state.updateState(createMockTridentTuples(1000), null);
+        state.commit(3L);
+
+        // 1 file should have got moved
+        Assert.assertEquals(1, getMovedFiles(test_move_dir).size());
+
+        int replayBatchSize = 25;
+        // replay batch 3
+        state.beginCommit(3L);
+        state.updateState(createMockTridentTuples(replayBatchSize), null);
+        state.commit(3L);
+        state.close();
+
+        // Ensure that the original batch is discarded and new one is persisted.
+        List<String> lines = getLinesFromCurrentDataFile();
+        Assert.assertEquals(replayBatchSize, lines.size());
+        List<String> expected = new ArrayList<>();
+        for (int i = 0; i < replayBatchSize; i++) {
+            expected.add("data");
+        }
+        Assert.assertEquals(expected, lines);
+    }
+
+    private Collection<File> getMovedFiles(File dir) {
+        return FileUtils.listFiles(dir, new IOFileFilter() {
+            @Override
+            public boolean accept(File file) {
+                return file.getName().startsWith(FILE_NAME_PREFIX);
+            }
+
+            @Override
+            public boolean accept(File dir, String name) {
+                return false;
+            }
+        }, null);
     }
 
     @Test

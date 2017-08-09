@@ -83,6 +83,8 @@ public class HdfsState implements State {
 
         abstract void doCommit(Long txId) throws IOException;
 
+        abstract void doBeginCommit(Long txId) throws IOException;
+
         abstract void doRecover(Path srcPath, long nBytes) throws Exception;
 
         protected void rotateOutputFile(boolean doRotateAction) throws IOException {
@@ -92,9 +94,11 @@ public class HdfsState implements State {
             this.rotation++;
             Path newFile = createOutputFile();
             if (doRotateAction) {
-                LOG.info("Performing {} file rotation actions.", this.rotationActions.size());
                 for (RotationAction action : this.rotationActions) {
-                    action.execute(this.fs, this.currentFile);
+                    if (fs.exists(currentFile)) {
+                        LOG.info("Executing file rotation action '{}'", action);
+                        action.execute(this.fs, this.currentFile);
+                    }
                 }
             }
             this.currentFile = newFile;
@@ -151,16 +155,20 @@ public class HdfsState implements State {
         private void recover(String srcFile, long nBytes) {
             try {
                 Path srcPath = new Path(srcFile);
-                rotateOutputFile(false);
-                this.rotationPolicy.reset();
-                if (nBytes > 0) {
-                    doRecover(srcPath, nBytes);
-                    LOG.info("Recovered {} bytes from {} to {}", nBytes, srcFile, currentFile);
+                if (fs.exists(srcPath)) {
+                    rotateOutputFile(false);
+                    rotationPolicy.reset();
+                    if (nBytes > 0) {
+                        doRecover(srcPath, nBytes);
+                        LOG.info("Recovered {} bytes from {} to {}", nBytes, srcFile, currentFile);
+                    } else {
+                        LOG.info("Nothing to recover from {}", srcFile);
+                    }
+                    fs.delete(srcPath, false);
+                    LOG.info("Deleted file {} that had partial commits.", srcFile);
                 } else {
-                    LOG.info("Nothing to recover from {}", srcFile);
+                    LOG.warn("File '{}' does not exist, possibly already recovered or rotated.", srcFile);
                 }
-                fs.delete(srcPath, false);
-                LOG.info("Deleted file {} that had partial commits.", srcFile);
             } catch (Exception e) {
                 LOG.warn("Recovery failed.", e);
                 throw new RuntimeException(e);
@@ -234,17 +242,20 @@ public class HdfsState implements State {
         }
 
         @Override
-        public void doCommit(Long txId) throws IOException {
+        void doBeginCommit(Long txId) throws IOException {
             if (this.rotationPolicy.mark(this.offset)) {
                 rotateOutputFile();
                 this.offset = 0;
                 this.rotationPolicy.reset();
+            }
+        }
+
+        @Override
+        public void doCommit(Long txId) throws IOException {
+            if (this.out instanceof HdfsDataOutputStream) {
+                ((HdfsDataOutputStream) this.out).hsync(EnumSet.of(HdfsDataOutputStream.SyncFlag.UPDATE_LENGTH));
             } else {
-                if (this.out instanceof HdfsDataOutputStream) {
-                    ((HdfsDataOutputStream) this.out).hsync(EnumSet.of(HdfsDataOutputStream.SyncFlag.UPDATE_LENGTH));
-                } else {
-                    this.out.hsync();
-                }
+                this.out.hsync();
             }
         }
 
@@ -274,6 +285,7 @@ public class HdfsState implements State {
         Path createOutputFile() throws IOException {
             Path path = new Path(this.fileNameFormat.getPath(), this.fileNameFormat.getName(this.rotation, System.currentTimeMillis()));
             this.out = this.fs.create(path);
+            this.offset = 0;
             return path;
         }
 
@@ -349,13 +361,16 @@ public class HdfsState implements State {
         }
 
         @Override
-        public void doCommit(Long txId) throws IOException {
+        void doBeginCommit(Long txId) throws IOException {
             if (this.rotationPolicy.mark(this.writer.getLength())) {
                 rotateOutputFile();
                 this.rotationPolicy.reset();
-            } else {
-                this.writer.hsync();
             }
+        }
+
+        @Override
+        public void doCommit(Long txId) throws IOException {
+            this.writer.hsync();
         }
 
 
@@ -525,6 +540,13 @@ public class HdfsState implements State {
             long start = System.currentTimeMillis();
             options.recover(lastSeenTxn.dataFilePath, lastSeenTxn.offset);
             LOG.info("Recovery took {} ms.", System.currentTimeMillis() - start);
+        } else {
+            try {
+                options.doBeginCommit(txId);
+            } catch (IOException ex) {
+                LOG.warn("beginCommit failed.", ex);
+                throw new RuntimeException(ex);
+            }
         }
         updateIndex(txId);
     }
