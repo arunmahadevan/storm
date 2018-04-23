@@ -339,24 +339,28 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      */
     @Override
     public void ack(Object msgId) {
-        Message msg = this.pendingMessages.remove(msgId);
-        if (!toCommit.isEmpty()) {
-            JmsMessageID oldest = this.toCommit.first();
+        LOG.debug("Received ACK for message: {}", msgId);
+        Message msg = pendingMessages.remove(msgId);
+        if (toCommit.isEmpty()) {
+            LOG.debug("Not processing the ACK, toCommit is empty");
+        } else {
+            JmsMessageID oldest = toCommit.first();
             if (msgId.equals(oldest)) {
                 if (msg != null) {
                     try {
                         LOG.debug("Committing...");
                         msg.acknowledge();
-                        LOG.debug("JMS Message acked: " + msgId);
-                        this.toCommit.remove(msgId);
+                        LOG.debug("JMS Message acked: {}", msgId);
+                        toCommit.remove(msgId);
                     } catch (JMSException e) {
-                        LOG.warn("Error acknowldging JMS message: " + msgId, e);
+                        LOG.warn("Error acknowledging JMS message: {}", msgId, e);
                     }
                 } else {
-                    LOG.warn("Couldn't acknowledge unknown JMS message ID: " + msgId);
+                    LOG.warn("Couldn't acknowledge unknown JMS message: {}", msgId);
                 }
             } else {
-                this.toCommit.remove(msgId);
+                toCommit.remove(msgId);
+                LOG.debug("Removing message {} from toCommit, only the oldest message would be acked", msgId);
             }
         }
     }
