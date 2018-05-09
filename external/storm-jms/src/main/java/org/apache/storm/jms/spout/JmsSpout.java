@@ -18,23 +18,6 @@
 
 package org.apache.storm.jms.spout;
 
-import java.io.Serializable;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.TreeSet;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import javax.jms.Connection;
-import javax.jms.ConnectionFactory;
-import javax.jms.Destination;
-import javax.jms.JMSException;
-import javax.jms.Message;
-import javax.jms.MessageConsumer;
-import javax.jms.MessageListener;
-import javax.jms.Session;
-
 import org.apache.storm.Config;
 import org.apache.storm.jms.JmsProvider;
 import org.apache.storm.jms.JmsTupleProducer;
@@ -47,6 +30,23 @@ import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
+import javax.jms.Destination;
+import javax.jms.JMSException;
+import javax.jms.Message;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageListener;
+import javax.jms.Session;
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 /**
@@ -104,11 +104,8 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     /** Stores incoming messages for later sending. */
     private LinkedBlockingQueue<Message> queue;
 
-    /** Contains all message ids of messages that were not yet acked. */
-    private TreeSet<JmsMessageID> toCommit;
-
     /** Maps between message ids of not-yet acked messages, and the messages. */
-    private HashMap<JmsMessageID, Message> pendingMessages;
+    private HashMap<JmsMessageID, Message> pendingAcks;
 
     /** Counter of handled messages. */
     private long messageSequence = 0;
@@ -133,6 +130,10 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
 
     /** Time to wait between recovery attempts. */
     private long recoveryPeriodMs = -1; // default to disabled
+
+    private Lock lock = new ReentrantLock(true);
+
+    private boolean ackIndividualMessage = false;
 
     /**
      * Sets the JMS Session acknowledgement mode for the JMS session.
@@ -202,6 +203,9 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
         this.tupleProducer = producer;
     }
 
+    public void setAckIndividualMessage() {
+        ackIndividualMessage = true;
+    }
     /**
      * <code>javax.jms.MessageListener</code> implementation.
      *
@@ -212,11 +216,14 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      */
     public void onMessage(Message msg) {
         try {
+            lock();
             LOG.debug("Queuing msg [" + msg.getJMSMessageID() + "]");
+            queue.offer(msg);
         } catch (JMSException ignored) {
             // Do nothing
+        } finally {
+            unlock();
         }
-        this.queue.offer(msg);
     }
 
     /**
@@ -246,8 +253,7 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
                     + " secs. This could lead to a message replay flood!");
         }
         this.queue = new LinkedBlockingQueue<Message>();
-        this.toCommit = new TreeSet<JmsMessageID>();
-        this.pendingMessages = new HashMap<JmsMessageID, Message>();
+        this.pendingAcks = new HashMap<JmsMessageID, Message>();
         this.collector = collector;
         try {
             ConnectionFactory cf = this.jmsProvider.connectionFactory();
@@ -291,39 +297,43 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * jms connection, every {@link #POLL_INTERVAL_MS} seconds. When a message
      * arrives, a {@link Values} (tuple) is generated using
      * {@link #tupleProducer}. It is emitted, and the message is saved to
-     * {@link #toCommit} and {@link #pendingMessages} for later handling.
+     * {@link #pendingAcks} for later handling.
      */
     public void nextTuple() {
-        Message msg = this.queue.poll();
-        if (msg == null) {
-            Utils.sleep(POLL_INTERVAL_MS);
-        } else {
+        Message msg = null;
+        try {
+            lock();
+            msg = queue.poll();
+            if (msg == null) {
+                Utils.sleep(POLL_INTERVAL_MS);
+            } else {
 
-            LOG.debug("sending tuple: " + msg);
-            // get the tuple from the handler
-            try {
-                Values vals = this.tupleProducer.toTuple(msg);
-                // ack if we're not in AUTO_ACKNOWLEDGE mode,
-                // or the message requests ACKNOWLEDGE
-                LOG.debug("Requested deliveryMode: " + toDeliveryModeString(msg.getJMSDeliveryMode()));
-                LOG.debug("Our deliveryMode: " + toDeliveryModeString(this.jmsAcknowledgeMode));
-                if (this.isDurableSubscription()) {
-                    LOG.debug("Requesting acks.");
-                    JmsMessageID messageId = new JmsMessageID(this.messageSequence++, msg.getJMSMessageID());
-                    this.collector.emit(vals, messageId);
+                LOG.debug("sending tuple: " + msg);
+                // get the tuple from the handler
+                try {
+                    Values vals = this.tupleProducer.toTuple(msg);
+                    // ack if we're not in AUTO_ACKNOWLEDGE mode,
+                    // or the message requests ACKNOWLEDGE
+                    LOG.debug("Requested deliveryMode: " + toDeliveryModeString(msg.getJMSDeliveryMode()));
+                    LOG.debug("Our deliveryMode: " + toDeliveryModeString(this.jmsAcknowledgeMode));
+                    if (this.isDurableSubscription()) {
+                        LOG.debug("Requesting acks.");
+                        JmsMessageID messageId = new JmsMessageID(this.messageSequence++, msg.getJMSMessageID());
+                        this.collector.emit(vals, messageId);
 
-                    // at this point we successfully emitted. Store
-                    // the message and message ID so we can do a
-                    // JMS acknowledge later
-                    this.pendingMessages.put(messageId, msg);
-                    this.toCommit.add(messageId);
-                } else {
-                    this.collector.emit(vals);
+                        // at this point we successfully emitted. Store
+                        // the message and message ID so we can do a
+                        // JMS acknowledge later
+                        this.pendingAcks.put(messageId, msg);
+                    } else {
+                        this.collector.emit(vals);
+                    }
+                } catch (JMSException e) {
+                    LOG.warn("Unable to convert JMS message: " + msg);
                 }
-            } catch (JMSException e) {
-                LOG.warn("Unable to convert JMS message: " + msg);
             }
-
+        } finally {
+            unlock();
         }
 
     }
@@ -340,28 +350,31 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     @Override
     public void ack(Object msgId) {
         LOG.debug("Received ACK for message: {}", msgId);
-        Message msg = pendingMessages.remove(msgId);
-        if (toCommit.isEmpty()) {
-            LOG.debug("Not processing the ACK, toCommit is empty");
-        } else {
-            JmsMessageID oldest = toCommit.first();
-            if (msgId.equals(oldest)) {
+        try {
+            lock();
+            if (pendingAcks.isEmpty()) {
+                LOG.debug("Not processing the ACK, pendingAcks is empty");
+            } else {
+                Message msg = pendingAcks.remove(msgId);
                 if (msg != null) {
-                    try {
-                        LOG.debug("Committing...");
-                        msg.acknowledge();
-                        LOG.debug("JMS Message acked: {}", msgId);
-                        toCommit.remove(msgId);
-                    } catch (JMSException e) {
-                        LOG.warn("Error acknowledging JMS message: {}", msgId, e);
+                    // if there are no more pending consumed messages and storm delivered ack for all
+                    if (ackIndividualMessage || (pendingAcks.isEmpty() && queue.isEmpty())) {
+                        try {
+                            LOG.debug("Committing...");
+                            msg.acknowledge();
+                            LOG.debug("JMS Message acked: {}", msgId);
+                        } catch (JMSException e) {
+                            LOG.warn("Error acknowledging JMS message: {}", msgId, e);
+                        }
+                    } else {
+                        LOG.debug("Not acknowledging the JMS message since there are pending messages in the session");
                     }
                 } else {
                     LOG.warn("Couldn't acknowledge unknown JMS message: {}", msgId);
                 }
-            } else {
-                toCommit.remove(msgId);
-                LOG.debug("Removing message {} from toCommit, only the oldest message would be acked", msgId);
             }
+        } finally {
+            unlock();
         }
     }
 
@@ -376,8 +389,12 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     @Override
     public void fail(Object msgId) {
         LOG.warn("Message failed: " + msgId);
-        this.pendingMessages.clear();
-        this.toCommit.clear();
+        try {
+            lock();
+            this.pendingAcks.clear();
+        } finally {
+            unlock();
+        }
         synchronized (this.recoveryMutex) {
             this.hasFailures = true;
         }
@@ -468,6 +485,18 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
             default:
                 return "UNKNOWN";
 
+        }
+    }
+
+    private void lock() {
+        if (isDurableSubscription()) {
+            lock.lock();
+        }
+    }
+
+    private void unlock() {
+        if (isDurableSubscription()) {
+            lock.unlock();
         }
     }
 
