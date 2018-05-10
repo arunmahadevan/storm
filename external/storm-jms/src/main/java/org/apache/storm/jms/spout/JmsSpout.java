@@ -18,7 +18,6 @@
 
 package org.apache.storm.jms.spout;
 
-import org.apache.storm.Config;
 import org.apache.storm.jms.JmsProvider;
 import org.apache.storm.jms.JmsTupleProducer;
 import org.apache.storm.spout.SpoutOutputCollector;
@@ -26,7 +25,6 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichSpout;
 import org.apache.storm.tuple.Values;
-import org.apache.storm.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,11 +36,8 @@ import javax.jms.Message;
 import javax.jms.MessageConsumer;
 import javax.jms.MessageListener;
 import javax.jms.Session;
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
@@ -58,8 +53,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * <code>ConnectionFactory</code> and <code>Destination</code> objects necessary
  * to connect to a JMS topic/queue.
  *
- * <p>When a <code>JmsSpout</code> receives a JMS message, it delegates to an
- * internal <code>JmsTupleProducer</code> instance to create a Storm tuple from
+ * <p>When a {@code JmsSpout} receives a JMS message, it delegates to an
+ * internal {@code JmsTupleProducer} instance to create a Storm tuple from
  * the incoming message.
  *
  * <p>Typically, developers will supply a custom <code>JmsTupleProducer</code>
@@ -71,19 +66,8 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     /** The logger object instance for this class. */
     private static final Logger LOG = LoggerFactory.getLogger(JmsSpout.class);
 
-    /** The logger of the recovery task. */
-    private static final Logger RECOVERY_TASK_LOG = LoggerFactory.getLogger(RecoveryTask.class);
-
     /** Time to sleep between queue polling attempts. */
     private static final int POLL_INTERVAL_MS = 50;
-
-    /**
-     * The default value for {@link Config#TOPOLOGY_MESSAGE_TIMEOUT_SECS}.
-     */
-    private static final int DEFAULT_MESSAGE_TIMEOUT_SECS = 30;
-
-    /** Time to wait before queuing the first recovery task. */
-    private static final int RECOVERY_DELAY_MS = 10;
 
     /**
      * The acknowledgment mode used for this instance.
@@ -104,9 +88,6 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     /** Stores incoming messages for later sending. */
     private LinkedBlockingQueue<Message> queue;
 
-    /** Maps between message ids of not-yet acked messages, and the messages. */
-    private HashMap<JmsMessageID, Message> pendingAcks;
-
     /** Counter of handled messages. */
     private long messageSequence = 0;
 
@@ -119,21 +100,14 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     /** The active jms session. */
     private transient Session session;
 
-    /** Indicates whether or not a message failed to be processed. */
-    private boolean hasFailures = false;
+    /** Sets up the way we want to handle the emit, ack and fails. */
+    private MessageHandler messageHandler;
 
-    /** Used to safely recover failed JMS sessions across instances. */
-    private final Serializable recoveryMutex = "RECOVERY_MUTEX";
-
-    /** Schedules recovery tasks periodically. */
-    private Timer recoveryTimer = null;
-
-    /** Time to wait between recovery attempts. */
-    private long recoveryPeriodMs = -1; // default to disabled
-
-    private Lock lock = new ReentrantLock(true);
-
-    private boolean ackIndividualMessage = false;
+    /**
+     * Does ack-ing a JMS message ack only an individual message
+     * Some JMS providers allow users to set this behavior.
+     */
+    private boolean individualAcks;
 
     /**
      * Sets the JMS Session acknowledgement mode for the JMS session.
@@ -151,12 +125,21 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     public void setJmsAcknowledgeMode(final int mode) {
         switch (mode) {
             case Session.AUTO_ACKNOWLEDGE:
-            case Session.CLIENT_ACKNOWLEDGE:
             case Session.DUPS_OK_ACKNOWLEDGE:
+                messageHandler = new MessageHandler();
+                break;
+            case Session.CLIENT_ACKNOWLEDGE:
+            case Session.SESSION_TRANSACTED:
+                if (individualAcks) {
+                    messageHandler = new MessageAckHandler();
+                } else {
+                    messageHandler = new ClientAckHandler();
+                }
                 break;
             default:
                 throw new IllegalArgumentException(
-                        "Unknown Acknowledge mode: " + mode + " (See javax.jms.Session for valid values)");
+                        "Unknown Acknowledge mode: " + mode
+                            + " (See javax.jms.Session for valid values)");
 
         }
         this.jmsAcknowledgeMode = mode;
@@ -199,12 +182,15 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      *
      * @param producer the producer instance to use
      */
-    public void setJmsTupleProducer(JmsTupleProducer producer) {
+    public void setJmsTupleProducer(final JmsTupleProducer producer) {
         this.tupleProducer = producer;
     }
 
-    public void setAckIndividualMessage() {
-        ackIndividualMessage = true;
+    /**
+     * Set if JMS provider acks individual messages.
+     */
+    public void setIndividualAcks() {
+        individualAcks = true;
     }
     /**
      * <code>javax.jms.MessageListener</code> implementation.
@@ -214,15 +200,15 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      *
      * @param msg the message to handle
      */
-    public void onMessage(Message msg) {
+    public void onMessage(final Message msg) {
         try {
-            lock();
+            messageHandler.lock();
             LOG.debug("Queuing msg [" + msg.getJMSMessageID() + "]");
             queue.offer(msg);
         } catch (JMSException ignored) {
             // Do nothing
         } finally {
-            unlock();
+            messageHandler.unlock();
         }
     }
 
@@ -233,41 +219,28 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * topic/queue.
      */
     @Override
-    public void open(Map<String, Object> conf,
-                     TopologyContext context,
-                     SpoutOutputCollector collector) {
+    public void open(final Map<String, Object> conf,
+                     final TopologyContext context,
+                     final SpoutOutputCollector spoutOutputCollector) {
 
         if (this.jmsProvider == null) {
-            throw new IllegalStateException("JMS provider has not been set.");
+            throw new IllegalStateException(
+                "JMS provider has not been set.");
         }
         if (this.tupleProducer == null) {
-            throw new IllegalStateException("JMS Tuple Producer has not been set.");
+            throw new IllegalStateException(
+                "JMS Tuple Producer has not been set.");
         }
-        // TODO get the default value from storm instead of hard coding 30 secs
-        Long topologyTimeout =
-                ((Number) conf.getOrDefault(Config.TOPOLOGY_MESSAGE_TIMEOUT_SECS, DEFAULT_MESSAGE_TIMEOUT_SECS)).longValue();
-        if ((TimeUnit.SECONDS.toMillis(topologyTimeout)) > this.recoveryPeriodMs) {
-            LOG.warn("*** WARNING *** : "
-                    + "Recovery period (" + this.recoveryPeriodMs + " ms.) is less then the configured "
-                    + "'topology.message.timeout.secs' of " + topologyTimeout
-                    + " secs. This could lead to a message replay flood!");
-        }
-        this.queue = new LinkedBlockingQueue<Message>();
-        this.pendingAcks = new HashMap<JmsMessageID, Message>();
-        this.collector = collector;
+        queue = new LinkedBlockingQueue<>();
+        collector = spoutOutputCollector;
         try {
-            ConnectionFactory cf = this.jmsProvider.connectionFactory();
-            Destination dest = this.jmsProvider.destination();
-            this.connection = cf.createConnection();
-            this.session = connection.createSession(false, this.jmsAcknowledgeMode);
+            ConnectionFactory cf = jmsProvider.connectionFactory();
+            Destination dest = jmsProvider.destination();
+            connection = cf.createConnection();
+            session = connection.createSession(false, jmsAcknowledgeMode);
             MessageConsumer consumer = session.createConsumer(dest);
             consumer.setMessageListener(this);
-            this.connection.start();
-            if (this.isDurableSubscription() && this.recoveryPeriodMs > 0) {
-                this.recoveryTimer = new Timer();
-                this.recoveryTimer.scheduleAtFixedRate(new RecoveryTask(), RECOVERY_DELAY_MS, this.recoveryPeriodMs);
-            }
-
+            connection.start();
         } catch (Exception e) {
             LOG.warn("Error creating JMS connection.", e);
         }
@@ -277,13 +250,14 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
     /**
      * Close the {@link #session} and {@link #connection}.
      *
-     * <p>When overridden, should always call {@code super} to finalize the active connections.
+     * <p>When overridden, should always call {@code super}
+     * to finalize the active connections.
      */
     public void close() {
         try {
             LOG.debug("Closing JMS connection.");
-            this.session.close();
-            this.connection.close();
+            session.close();
+            connection.close();
         } catch (JMSException e) {
             LOG.warn("Error closing JMS connection.", e);
         }
@@ -294,48 +268,20 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * Generate the next tuple from a message.
      *
      * <p>This method polls the queue that's being filled asynchronously by the
-     * jms connection, every {@link #POLL_INTERVAL_MS} seconds. When a message
-     * arrives, a {@link Values} (tuple) is generated using
-     * {@link #tupleProducer}. It is emitted, and the message is saved to
-     * {@link #pendingAcks} for later handling.
+     * jms connection, every {@link #POLL_INTERVAL_MS} seconds.
      */
     public void nextTuple() {
-        Message msg = null;
         try {
-            lock();
-            msg = queue.poll();
-            if (msg == null) {
-                Utils.sleep(POLL_INTERVAL_MS);
-            } else {
-
-                LOG.debug("sending tuple: " + msg);
-                // get the tuple from the handler
-                try {
-                    Values vals = this.tupleProducer.toTuple(msg);
-                    // ack if we're not in AUTO_ACKNOWLEDGE mode,
-                    // or the message requests ACKNOWLEDGE
-                    LOG.debug("Requested deliveryMode: " + toDeliveryModeString(msg.getJMSDeliveryMode()));
-                    LOG.debug("Our deliveryMode: " + toDeliveryModeString(this.jmsAcknowledgeMode));
-                    if (this.isDurableSubscription()) {
-                        LOG.debug("Requesting acks.");
-                        JmsMessageID messageId = new JmsMessageID(this.messageSequence++, msg.getJMSMessageID());
-                        this.collector.emit(vals, messageId);
-
-                        // at this point we successfully emitted. Store
-                        // the message and message ID so we can do a
-                        // JMS acknowledge later
-                        this.pendingAcks.put(messageId, msg);
-                    } else {
-                        this.collector.emit(vals);
-                    }
-                } catch (JMSException e) {
-                    LOG.warn("Unable to convert JMS message: " + msg);
-                }
-            }
+            messageHandler.lock();
+            Message msg = queue.poll(POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+            LOG.debug("sending tuple {}", msg);
+            // get the tuple from the handler
+            messageHandler.emit(msg);
+        } catch (InterruptedException ex) {
+          LOG.warn("Got error trying to process tuple", ex);
         } finally {
-            unlock();
+            messageHandler.unlock();
         }
-
     }
 
     /**
@@ -348,33 +294,13 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * <p>Will only be called if we're transactional or not AUTO_ACKNOWLEDGE.
      */
     @Override
-    public void ack(Object msgId) {
+    public void ack(final Object msgId) {
         LOG.debug("Received ACK for message: {}", msgId);
         try {
-            lock();
-            if (pendingAcks.isEmpty()) {
-                LOG.debug("Not processing the ACK, pendingAcks is empty");
-            } else {
-                Message msg = pendingAcks.remove(msgId);
-                if (msg != null) {
-                    // if there are no more pending consumed messages and storm delivered ack for all
-                    if (ackIndividualMessage || (pendingAcks.isEmpty() && queue.isEmpty())) {
-                        try {
-                            LOG.debug("Committing...");
-                            msg.acknowledge();
-                            LOG.debug("JMS Message acked: {}", msgId);
-                        } catch (JMSException e) {
-                            LOG.warn("Error acknowledging JMS message: {}", msgId, e);
-                        }
-                    } else {
-                        LOG.debug("Not acknowledging the JMS message since there are pending messages in the session");
-                    }
-                } else {
-                    LOG.warn("Couldn't acknowledge unknown JMS message: {}", msgId);
-                }
-            }
+            messageHandler.lock();
+            messageHandler.ack(msgId);
         } finally {
-            unlock();
+            messageHandler.unlock();
         }
     }
 
@@ -387,16 +313,13 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * <p>Will only be called if we're transactional or not AUTO_ACKNOWLEDGE
      */
     @Override
-    public void fail(Object msgId) {
+    public void fail(final Object msgId) {
         LOG.warn("Message failed: " + msgId);
         try {
-            lock();
-            this.pendingAcks.clear();
+            messageHandler.lock();
+            messageHandler.fail(msgId);
         } finally {
-            unlock();
-        }
-        synchronized (this.recoveryMutex) {
-            this.hasFailures = true;
+            messageHandler.unlock();
         }
     }
 
@@ -407,26 +330,9 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * for this stream are used.
      */
     @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
+    public void declareOutputFields(final OutputFieldsDeclarer declarer) {
         this.tupleProducer.declareOutputFields(declarer);
 
-    }
-
-    /**
-     * Returns <code>true</code> if the spout has received failures
-     * from which it has not yet recovered.
-     *
-     * @return {@code true} if there were failures, {@code false} otherwise.
-     */
-    public boolean hasFailures() {
-        return this.hasFailures;
-    }
-
-    /**
-     * Marks a healthy session state.
-     */
-    protected void recovered() {
-        this.hasFailures = false;
     }
 
     /**
@@ -435,8 +341,7 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      *
      * @param period desired wait period
      */
-    public void setRecoveryPeriodMs(long period) {
-        this.recoveryPeriodMs = period;
+    public void setRecoveryPeriodMs(final long period) {
     }
 
     /**
@@ -463,84 +368,139 @@ public class JmsSpout extends BaseRichSpout implements MessageListener {
      * @param isDistributed {@code true} if should be distributed, {@code false}
      *                      otherwise.
      */
-    public void setDistributed(boolean isDistributed) {
+    public void setDistributed(final boolean isDistributed) {
         this.distributed = isDistributed;
-    }
-
-    /**
-     * Translate the {@code int} value of an acknowledgment to a {@code String}.
-     *
-     * @param deliveryMode the mode to translate.
-     * @return its {@code String} explanation (name).
-     * @see Session
-     */
-    private static String toDeliveryModeString(int deliveryMode) {
-        switch (deliveryMode) {
-            case Session.AUTO_ACKNOWLEDGE:
-                return "AUTO_ACKNOWLEDGE";
-            case Session.CLIENT_ACKNOWLEDGE:
-                return "CLIENT_ACKNOWLEDGE";
-            case Session.DUPS_OK_ACKNOWLEDGE:
-                return "DUPS_OK_ACKNOWLEDGE";
-            default:
-                return "UNKNOWN";
-
-        }
-    }
-
-    private void lock() {
-        if (isDurableSubscription()) {
-            lock.lock();
-        }
-    }
-
-    private void unlock() {
-        if (isDurableSubscription()) {
-            lock.unlock();
-        }
     }
 
     /**
      * @return The currently active session.
      */
     protected Session getSession() {
-        return this.session;
+        return session;
     }
 
     /**
-     * Check if the subscription requires messages to be acked.
-     *
-     * @return {@code true} if there is a pending messages state, {@code false}
-     *         otherwise.
+     * Handles messages in JMS AUTO or DUPS_OK ack mode.
      */
-    private boolean isDurableSubscription() {
-        return (this.jmsAcknowledgeMode != Session.AUTO_ACKNOWLEDGE);
+    private class MessageHandler {
+
+        void emit(final Message msg) {
+            LOG.debug("Received msg {}", msg);
+            try {
+                Values vals = tupleProducer.toTuple(msg);
+                collector.emit(vals);
+            } catch (JMSException ex) {
+                LOG.warn("Error processing message {}", msg);
+            }
+        }
+
+        void ack(final Object msgId) {
+            // NOOP
+        }
+
+        void fail(final Object msgId) {
+            // NOOP
+        }
+
+        void lock() {
+            // NOOP
+        }
+
+        void unlock() {
+            // NOOP
+        }
     }
 
-
     /**
-     * The periodic task used to try and recover failed sessions.
+     * JMS mode where individual messages can be ack-ed
      */
-    private class RecoveryTask extends TimerTask {
+    private class MessageAckHandler extends MessageHandler {
+        /** Maps between message ids of not-yet acked messages, and the messages. */
+        protected HashMap<JmsMessageID, Message> pendingAcks = new HashMap<>();
 
-        /**
-         * Try to recover a failed active session.
-         *
-         * <p>If there is no active recovery task, and the session is failed,
-         * try to recover the session.
-         */
-        public void run() {
-            synchronized (JmsSpout.this.recoveryMutex) {
-                if (JmsSpout.this.hasFailures()) {
+        @Override
+        void emit(final Message msg) {
+            LOG.debug("Received msg {}, Requesting acks.", msg);
+            try {
+                JmsMessageID messageId = new JmsMessageID(messageSequence++, msg.getJMSMessageID());
+                Values vals = tupleProducer.toTuple(msg);
+                collector.emit(vals, messageId);
+                pendingAcks.put(messageId, msg);
+            } catch (JMSException ex) {
+                LOG.warn("Error processing message {}", msg);
+            }
+        }
+
+        @Override
+        void ack(final Object msgId) {
+            if (pendingAcks.isEmpty()) {
+                LOG.debug("Not processing the ACK, pendingAcks is empty");
+            } else {
+                Message msg = pendingAcks.remove(msgId);
+                if (msg != null) {
                     try {
-                        RECOVERY_TASK_LOG.info("Recovering from a message failure.");
-                        JmsSpout.this.getSession().recover();
-                        JmsSpout.this.recovered();
+                        doAck(msg);
+                        LOG.debug("JMS Message acked: {}", msgId);
                     } catch (JMSException e) {
-                        RECOVERY_TASK_LOG.warn("Could not recover jms session.", e);
+                        LOG.warn("Error acknowledging JMS message: {}", msgId, e);
                     }
+
+                } else {
+                    LOG.warn("Couldn't acknowledge unknown JMS message: {}", msgId);
                 }
             }
+        }
+
+        @Override
+        void fail(final Object msgId) {
+            LOG.debug("Received fail for message {}", msgId);
+            try {
+                doFail(msgId);
+            } catch (JMSException ex) {
+                LOG.warn("Error during session recovery", ex);
+            }
+        }
+
+        protected void doAck(Message msg) throws JMSException {
+            msg.acknowledge();
+        }
+
+        protected void doFail(final Object msgId) throws JMSException {
+            pendingAcks.remove(msgId);
+            getSession().recover();
+        }
+    }
+
+    private class ClientAckHandler extends MessageAckHandler {
+        private Lock lock = new ReentrantLock(true);
+
+        @Override
+        protected void doAck(final Message msg) throws JMSException {
+            // if there are no more pending consumed messages and storm delivered ack for all
+            if (pendingAcks.isEmpty() && queue.isEmpty()) {
+                msg.acknowledge();
+            } else {
+                LOG.debug("Not acknowledging the JMS message since there are pending messages in the session");
+            }
+        }
+
+        @Override
+        protected void doFail(final Object msgId) throws JMSException {
+            if (!pendingAcks.isEmpty()) {
+                pendingAcks.clear();
+                getSession().recover();
+            }
+        }
+
+
+        @Override
+        void lock() {
+            lock.lock();
+        }
+
+        @Override
+        void unlock() {
+            lock.unlock();
         }
 
     }
